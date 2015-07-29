@@ -1,0 +1,19 @@
+{
+  "name": "featureBasedWebAudioSynthesis",
+  "version": "0.0.1",
+  "description": "Feature based synthesis in the web audio api",
+  "main": "Gulpfile.js",
+  "devDependencies": {
+    "babelify": "^6.1.3",
+    "browserify": "^11.0.0",
+    "browser-sync": "^2.8.1",
+    "debowerify": "^1.3.1",
+    "gulp": "^3.9.0",
+    "through2": "^2.0.0"
+  },
+  "scripts": {
+    "test": "make test"
+  },
+  "author": "Hugh Rawlinson <hugh@codeoclock.net> (http://www.hughrawlinson.me/)",
+  "license": "MIT"
+}

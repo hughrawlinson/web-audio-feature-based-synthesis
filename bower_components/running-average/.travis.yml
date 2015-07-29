@@ -1,0 +1,14 @@
+sudo: false
+language: node_js
+node_js:
+- '0.10'
+- '0.12'
+- iojs
+deploy:
+  provider: npm
+  email: nathan@nfriedly.com
+  on:
+    tags: true
+    node: '0.12'
+  api_key:
+    secure: F5ojpoeSaFA23nAipdr0K13DQQ3lbrYpiB1JngL0sWjSYb6DW/Pl49XMPmJ3TCDZVqPENwuSQ+sHXbIr0yl2OoHK/RQpfrQXx8v96J1eSbo1TLakRKL5RvKHLWfKavSXrMIalGM4NHZD50TYVLM4IBQtzjB3uQS+XsA55Xdn4qfoEZHdMiZHufViYtwWbRh5frF2HIocjUcGcKZoIpf2nK7GxS4dbfdYrBxACW8esGzuHpH/sR5HIC7X8pPbDs//3DkIgYttg+OGqCDsRv8UpD7labwiuCTAFWMhhpA58xmmQRWIW0JmgblKfWFV5Y8GJyTkXRg9phgCNvmUV6aOdFcM+NRFPHDqd59X4Z8L/x56dvTNrK74hvgQWGVwnagb+Qg0tt5ezUjDce/JeSpud28gjouTK3l0qbUZgl5blhKc/DfqEMX/KQtt6+hStcvxjh03H7Wv6JZkHXrq5mbzQADfqgKIB0dkhQhFHbDWmfgHhS0Bn24+vfRIlTU3ZRpLSI8V9CoewkOgGaifZ5a9UZhrMzhZ5OZa2AaxRMHy+SjgZP4L79L5no/s2z6WgiZeqgr9j5BZxDFMDmCaqwdGnnf0UUuRjtkicrqB37dp9q9VOHyFDpPeJjEtgfX1mNQCCfKvRa2bkQSigTb8vabRwSOFKo3OVAn2nz3h9eGvQMM=

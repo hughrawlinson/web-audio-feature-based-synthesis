@@ -1,0 +1,29 @@
+{
+  "name": "featureBasedWebAudioSynthesis",
+  "version": "0.0.1",
+  "authors": [
+    "Hugh Rawlinson <hugh@codeoclock.net>"
+  ],
+  "description": "Feature based synthesis in the web audio api",
+  "keywords": [
+    "Audio",
+    "MIR",
+    "Feature",
+    "Extraction"
+  ],
+  "license": "MIT",
+  "homepage": "http://hraw.me",
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "test",
+    "tests"
+  ],
+  "dependencies": {
+    "meyda": "~2.0.0",
+    "brain": "*",
+    "running-average": "~2.0.2",
+    "react": "~0.13.3"
+  }
+}
