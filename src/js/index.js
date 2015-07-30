@@ -1,4 +1,3 @@
-import 'meyda';
 import RunningAverage from 'running-average/lib/running-average';
 import FaderBank from './faderBank';
 import React from 'react';
