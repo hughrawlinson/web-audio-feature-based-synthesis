@@ -6361,59 +6361,47 @@ var _react = require("./../../bower_components/react/react.js");
 var _react2 = _interopRequireDefault(_react);
 
 module.exports = _react2["default"].createClass({
-  displayName: "exports",
+	displayName: "exports",
 
-  render: function render() {
-    return _react2["default"].createElement(
-      "div",
-      null,
-      _react2["default"].createElement(
-        "dt",
-        null,
-        this.props.label
-      ),
-      _react2["default"].createElement(
-        "dd",
-        null,
-        _react2["default"].createElement("input", { type: "range", min: "0", max: "1", value: "1", step: "0.01" })
-      )
-    );
-  },
-  onChange: function onChange() {}
+	getInitialState: function getInitialState() {
+		return {
+			value: this.props.defaultValue
+		};
+	},
+	getDefaultProps: function getDefaultProps() {
+		return {
+			"min": 0,
+			"max": 1
+		};
+	},
+	handleChange: function handleChange(event) {
+		var value = +event.target.value;
+		this.setState({ value: value });
+		this.props.handler(value);
+	},
+	render: function render() {
+		var value = this.state.value;
+		var min = this.props.min;
+		var max = this.props.max;
+		var step = this.props.step;
+		return _react2["default"].createElement(
+			"div",
+			null,
+			_react2["default"].createElement(
+				"dt",
+				null,
+				this.props.label
+			),
+			_react2["default"].createElement(
+				"dd",
+				null,
+				_react2["default"].createElement("input", { type: "range", min: min, max: max, value: value, step: step, onChange: this.handleChange })
+			)
+		);
+	}
 });
 
 },{"./../../bower_components/react/react.js":2}],5:[function(require,module,exports){
-'use strict';
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-require("./../../bower_components/meyda/dist/web/meyda.min.js");
-
-var _runningAverageLibRunningAverage = require("./../../bower_components/running-average/lib/running-average");
-
-var _runningAverageLibRunningAverage2 = _interopRequireDefault(_runningAverageLibRunningAverage);
-
-var _synth = require('./synth');
-
-var _synth2 = _interopRequireDefault(_synth);
-
-var _react = require("./../../bower_components/react/react.js");
-
-var _react2 = _interopRequireDefault(_react);
-
-window.addEventListener('load', function () {
-	var ctx = new AudioContext();
-	var src = ctx.createOscillator();
-	var p = new Meyda({
-		"audioContext": ctx,
-		"source": src,
-		"bufferSize": 512
-	});
-
-	_react2['default'].render(_react2['default'].createElement(_synth2['default'], null), document.getElementById('synth'));
-}, false);
-
-},{"./../../bower_components/meyda/dist/web/meyda.min.js":1,"./../../bower_components/react/react.js":2,"./../../bower_components/running-average/lib/running-average":3,"./synth":6}],6:[function(require,module,exports){
 'use strict';
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
@@ -6426,32 +6414,24 @@ var _fader = require('./fader');
 
 var _fader2 = _interopRequireDefault(_fader);
 
-var data = [{
-	key: "osc1Vol",
-	label: "Oscillator 1 Volume"
-}, {
-	key: "osc1Type",
-	label: "Oscillator 1 Type"
-}, {
-	key: "osc2Vol",
-	label: "Oscillator 2 Volume"
-}, {
-	key: "osc2Type",
-	label: "Oscillator 2 Type"
-}];
+var _subtractive = require('./subtractive');
+
+var _subtractive2 = _interopRequireDefault(_subtractive);
+
+var sub = new _subtractive2['default']({ ctx: new AudioContext() });
 
 module.exports = _react2['default'].createClass({
 	displayName: 'exports',
 
 	getInitialState: function getInitialState() {
-		return { data: [] };
+		return { "data": [] };
 	},
 	componentDidMount: function componentDidMount() {
-		this.setState({ data: data });
+		this.setState({ data: sub.getFaders() });
 	},
 	render: function render() {
 		var faderNodes = this.state.data.map(function (fader) {
-			return _react2['default'].createElement(_fader2['default'], { label: fader.label });
+			return _react2['default'].createElement(_fader2['default'], { key: fader.key, min: fader.min, max: fader.max, step: fader.step, defaultValue: fader.defaultValue, label: fader.label, handler: fader.handler });
 		});
 		return _react2['default'].createElement(
 			'div',
@@ -6466,4 +6446,159 @@ module.exports = _react2['default'].createClass({
 	}
 });
 
-},{"./../../bower_components/react/react.js":2,"./fader":4}]},{},[5]);
+},{"./../../bower_components/react/react.js":2,"./fader":4,"./subtractive":7}],6:[function(require,module,exports){
+'use strict';
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+require("./../../bower_components/meyda/dist/web/meyda.min.js");
+
+var _runningAverageLibRunningAverage = require("./../../bower_components/running-average/lib/running-average");
+
+var _runningAverageLibRunningAverage2 = _interopRequireDefault(_runningAverageLibRunningAverage);
+
+var _faderBank = require('./faderBank');
+
+var _faderBank2 = _interopRequireDefault(_faderBank);
+
+var _react = require("./../../bower_components/react/react.js");
+
+var _react2 = _interopRequireDefault(_react);
+
+window.addEventListener('load', function () {
+	_react2['default'].render(_react2['default'].createElement(_faderBank2['default'], null), document.getElementById('synth'));
+}, false);
+
+},{"./../../bower_components/meyda/dist/web/meyda.min.js":1,"./../../bower_components/react/react.js":2,"./../../bower_components/running-average/lib/running-average":3,"./faderBank":5}],7:[function(require,module,exports){
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+	value: true
+});
+
+var _createClass = (function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ("value" in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; })();
+
+function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+var Subtractive = (function () {
+	function Subtractive(params) {
+		_classCallCheck(this, Subtractive);
+
+		this.ctx = params.ctx;
+		this.nyquist = this.ctx.sampleRate / 2;
+		this.osc1 = this.ctx.createOscillator();
+		this.osc2 = this.ctx.createOscillator();
+		this.lpf = this.ctx.createBiquadFilter();
+		this.lpf.frequency.value = this.nyquist;
+		this.gain1 = this.ctx.createGain();
+		this.gain2 = this.ctx.createGain();
+		this.gain3 = this.ctx.createGain();
+		this.osc1.connect(this.gain1);
+		this.osc2.connect(this.gain2);
+		this.gain1.connect(this.lpf);
+		this.gain2.connect(this.lpf);
+		this.lpf.connect(this.gain3);
+		this.gain3.connect(this.ctx.destination);
+
+		this.start();
+	}
+
+	_createClass(Subtractive, [{
+		key: "getFaders",
+		value: function getFaders() {
+			var _this = this;
+
+			var faders = [];
+			var oscillatorTypes = ["sine", "square", "sawtooth", "triangle"];
+
+			var oscillators = [this.osc1, this.osc2];
+			var gains = [this.gain1, this.gain2];
+			for (var i = 0; i < oscillators.length; i++) {
+				var oscillator = oscillators[i];
+				var gain = gains[i];
+				faders.push({
+					key: "oscillator" + i + "Detune",
+					label: "Oscillator #" + i + " Detune",
+					min: -100,
+					max: 100,
+					step: 0.01,
+					defaultValue: oscillator.detune.value,
+					handler: function handler(value) {
+						oscillator.detune.value = value;
+					}
+				});
+				faders.push({
+					key: "oscillator" + i + "Type",
+					label: "Oscillator #" + i + " Type",
+					min: 0,
+					max: 3,
+					step: 1,
+					defaultValue: oscillatorTypes.indexOf(oscillator.type),
+					handler: function handler(value) {
+						oscillator.type = oscillatorTypes[Math.round(value)];
+					}
+				});
+				faders.push({
+					key: "oscillator" + i + "Gain",
+					label: "Oscillator #" + i + " Gain",
+					min: 0,
+					max: 1,
+					defaultValue: gain.gain.value,
+					step: 0.01,
+					handler: function handler(value) {
+						gain.gain.value = value;
+					}
+				});
+			}
+			// filter params
+			faders.push({
+				key: "filterFreq",
+				label: "Filter Frequency",
+				min: 50,
+				max: this.nyquist,
+				defaultValue: this.lpf.frequency.value,
+				step: 1,
+				handler: function handler(value) {
+					_this.lpf.frequency.value = value;
+				}
+			});
+			faders.push({
+				key: "filterQ",
+				label: "Filter Resonance",
+				min: 0,
+				max: 20,
+				defaultValue: this.lpf.Q.value,
+				step: 0.01,
+				handler: function handler(value) {
+					_this.lpf.Q.value = value;
+				}
+			});
+			faders.push({
+				key: 'filterGain',
+				label: 'Final Gain',
+				min: 0,
+				max: 1,
+				defaultValue: this.gain3.gain.value,
+				step: 0.01,
+				handler: function handler(value) {
+					_this.gain3.gain.value = value;
+				}
+			});
+
+			return faders;
+		}
+	}, {
+		key: "start",
+		value: function start() {
+			this.osc1.start();
+			this.osc2.start();
+		}
+	}]);
+
+	return Subtractive;
+})();
+
+exports["default"] = Subtractive;
+module.exports = exports["default"];
+
+},{}]},{},[6]);
