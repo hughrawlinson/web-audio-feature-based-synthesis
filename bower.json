@@ -21,9 +21,9 @@
     "tests"
   ],
   "dependencies": {
-    "meyda": "~2.0.0",
     "brain": "*",
     "running-average": "~2.0.2",
-    "react": "~0.13.3"
+    "react": "~0.13.3",
+    "meyda": "~2.0.2"
   }
 }

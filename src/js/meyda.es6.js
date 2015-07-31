@@ -1,0 +1,1 @@
+../../../meyda/src/main.js
