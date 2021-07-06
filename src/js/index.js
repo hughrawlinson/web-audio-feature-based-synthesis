@@ -11,15 +11,16 @@ import RunningAverage from 'running-average/lib/running-average.js';
 			let averageCentroid = new RunningAverage();
 			let averageRMS = new RunningAverage();
 			let sub = new Subtractive(ctx,data=>{
-				averageCentroid.push(data.spectralCentroid);
+				averageCentroid.push(data.spectralCentroid/SAMP_RATE/2);
 				averageRMS.push(data.rms);
 			});
 			let faders = sub.getFaders();
 			let outs = [];
 			for(let i = 0; i < faders.length; i++){
-				var value = Math.random()*(faders[i].max-faders[i].min)+faders[i].min;
+				var v = Math.random();
+				var value = v*(faders[i].max-faders[i].min)+faders[i].min;
 				faders[i].handler(value);
-				outs.push(value);
+				outs.push(v);
 			}
 			ctx.startRendering().then(function(){
 				window.data.push({
