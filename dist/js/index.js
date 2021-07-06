@@ -54,1081 +54,6 @@
 })();
 
 },{}],2:[function(require,module,exports){
-// http://wiki.commonjs.org/wiki/Unit_Testing/1.0
-//
-// THIS IS NOT TESTED NOR LIKELY TO WORK OUTSIDE V8!
-//
-// Originally from narwhal.js (http://narwhaljs.org)
-// Copyright (c) 2009 Thomas Robinson <280north.com>
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the 'Software'), to
-// deal in the Software without restriction, including without limitation the
-// rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
-// sell copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
-// ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-// WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-// when used in node, this will actually load the util module we depend on
-// versus loading the builtin util module as happens otherwise
-// this is a bug in node module loading as far as I am concerned
-var util = require('util/');
-
-var pSlice = Array.prototype.slice;
-var hasOwn = Object.prototype.hasOwnProperty;
-
-// 1. The assert module provides functions that throw
-// AssertionError's when particular conditions are not met. The
-// assert module must conform to the following interface.
-
-var assert = module.exports = ok;
-
-// 2. The AssertionError is defined in assert.
-// new assert.AssertionError({ message: message,
-//                             actual: actual,
-//                             expected: expected })
-
-assert.AssertionError = function AssertionError(options) {
-  this.name = 'AssertionError';
-  this.actual = options.actual;
-  this.expected = options.expected;
-  this.operator = options.operator;
-  if (options.message) {
-    this.message = options.message;
-    this.generatedMessage = false;
-  } else {
-    this.message = getMessage(this);
-    this.generatedMessage = true;
-  }
-  var stackStartFunction = options.stackStartFunction || fail;
-
-  if (Error.captureStackTrace) {
-    Error.captureStackTrace(this, stackStartFunction);
-  }
-  else {
-    // non v8 browsers so we can have a stacktrace
-    var err = new Error();
-    if (err.stack) {
-      var out = err.stack;
-
-      // try to strip useless frames
-      var fn_name = stackStartFunction.name;
-      var idx = out.indexOf('\n' + fn_name);
-      if (idx >= 0) {
-        // once we have located the function frame
-        // we need to strip out everything before it (and its line)
-        var next_line = out.indexOf('\n', idx + 1);
-        out = out.substring(next_line + 1);
-      }
-
-      this.stack = out;
-    }
-  }
-};
-
-// assert.AssertionError instanceof Error
-util.inherits(assert.AssertionError, Error);
-
-function replacer(key, value) {
-  if (util.isUndefined(value)) {
-    return '' + value;
-  }
-  if (util.isNumber(value) && !isFinite(value)) {
-    return value.toString();
-  }
-  if (util.isFunction(value) || util.isRegExp(value)) {
-    return value.toString();
-  }
-  return value;
-}
-
-function truncate(s, n) {
-  if (util.isString(s)) {
-    return s.length < n ? s : s.slice(0, n);
-  } else {
-    return s;
-  }
-}
-
-function getMessage(self) {
-  return truncate(JSON.stringify(self.actual, replacer), 128) + ' ' +
-         self.operator + ' ' +
-         truncate(JSON.stringify(self.expected, replacer), 128);
-}
-
-// At present only the three keys mentioned above are used and
-// understood by the spec. Implementations or sub modules can pass
-// other keys to the AssertionError's constructor - they will be
-// ignored.
-
-// 3. All of the following functions must throw an AssertionError
-// when a corresponding condition is not met, with a message that
-// may be undefined if not provided.  All assertion methods provide
-// both the actual and expected values to the assertion error for
-// display purposes.
-
-function fail(actual, expected, message, operator, stackStartFunction) {
-  throw new assert.AssertionError({
-    message: message,
-    actual: actual,
-    expected: expected,
-    operator: operator,
-    stackStartFunction: stackStartFunction
-  });
-}
-
-// EXTENSION! allows for well behaved errors defined elsewhere.
-assert.fail = fail;
-
-// 4. Pure assertion tests whether a value is truthy, as determined
-// by !!guard.
-// assert.ok(guard, message_opt);
-// This statement is equivalent to assert.equal(true, !!guard,
-// message_opt);. To test strictly for the value true, use
-// assert.strictEqual(true, guard, message_opt);.
-
-function ok(value, message) {
-  if (!value) fail(value, true, message, '==', assert.ok);
-}
-assert.ok = ok;
-
-// 5. The equality assertion tests shallow, coercive equality with
-// ==.
-// assert.equal(actual, expected, message_opt);
-
-assert.equal = function equal(actual, expected, message) {
-  if (actual != expected) fail(actual, expected, message, '==', assert.equal);
-};
-
-// 6. The non-equality assertion tests for whether two objects are not equal
-// with != assert.notEqual(actual, expected, message_opt);
-
-assert.notEqual = function notEqual(actual, expected, message) {
-  if (actual == expected) {
-    fail(actual, expected, message, '!=', assert.notEqual);
-  }
-};
-
-// 7. The equivalence assertion tests a deep equality relation.
-// assert.deepEqual(actual, expected, message_opt);
-
-assert.deepEqual = function deepEqual(actual, expected, message) {
-  if (!_deepEqual(actual, expected)) {
-    fail(actual, expected, message, 'deepEqual', assert.deepEqual);
-  }
-};
-
-function _deepEqual(actual, expected) {
-  // 7.1. All identical values are equivalent, as determined by ===.
-  if (actual === expected) {
-    return true;
-
-  } else if (util.isBuffer(actual) && util.isBuffer(expected)) {
-    if (actual.length != expected.length) return false;
-
-    for (var i = 0; i < actual.length; i++) {
-      if (actual[i] !== expected[i]) return false;
-    }
-
-    return true;
-
-  // 7.2. If the expected value is a Date object, the actual value is
-  // equivalent if it is also a Date object that refers to the same time.
-  } else if (util.isDate(actual) && util.isDate(expected)) {
-    return actual.getTime() === expected.getTime();
-
-  // 7.3 If the expected value is a RegExp object, the actual value is
-  // equivalent if it is also a RegExp object with the same source and
-  // properties (`global`, `multiline`, `lastIndex`, `ignoreCase`).
-  } else if (util.isRegExp(actual) && util.isRegExp(expected)) {
-    return actual.source === expected.source &&
-           actual.global === expected.global &&
-           actual.multiline === expected.multiline &&
-           actual.lastIndex === expected.lastIndex &&
-           actual.ignoreCase === expected.ignoreCase;
-
-  // 7.4. Other pairs that do not both pass typeof value == 'object',
-  // equivalence is determined by ==.
-  } else if (!util.isObject(actual) && !util.isObject(expected)) {
-    return actual == expected;
-
-  // 7.5 For all other Object pairs, including Array objects, equivalence is
-  // determined by having the same number of owned properties (as verified
-  // with Object.prototype.hasOwnProperty.call), the same set of keys
-  // (although not necessarily the same order), equivalent values for every
-  // corresponding key, and an identical 'prototype' property. Note: this
-  // accounts for both named and indexed properties on Arrays.
-  } else {
-    return objEquiv(actual, expected);
-  }
-}
-
-function isArguments(object) {
-  return Object.prototype.toString.call(object) == '[object Arguments]';
-}
-
-function objEquiv(a, b) {
-  if (util.isNullOrUndefined(a) || util.isNullOrUndefined(b))
-    return false;
-  // an identical 'prototype' property.
-  if (a.prototype !== b.prototype) return false;
-  // if one is a primitive, the other must be same
-  if (util.isPrimitive(a) || util.isPrimitive(b)) {
-    return a === b;
-  }
-  var aIsArgs = isArguments(a),
-      bIsArgs = isArguments(b);
-  if ((aIsArgs && !bIsArgs) || (!aIsArgs && bIsArgs))
-    return false;
-  if (aIsArgs) {
-    a = pSlice.call(a);
-    b = pSlice.call(b);
-    return _deepEqual(a, b);
-  }
-  var ka = objectKeys(a),
-      kb = objectKeys(b),
-      key, i;
-  // having the same number of owned properties (keys incorporates
-  // hasOwnProperty)
-  if (ka.length != kb.length)
-    return false;
-  //the same set of keys (although not necessarily the same order),
-  ka.sort();
-  kb.sort();
-  //~~~cheap key test
-  for (i = ka.length - 1; i >= 0; i--) {
-    if (ka[i] != kb[i])
-      return false;
-  }
-  //equivalent values for every corresponding key, and
-  //~~~possibly expensive deep test
-  for (i = ka.length - 1; i >= 0; i--) {
-    key = ka[i];
-    if (!_deepEqual(a[key], b[key])) return false;
-  }
-  return true;
-}
-
-// 8. The non-equivalence assertion tests for any deep inequality.
-// assert.notDeepEqual(actual, expected, message_opt);
-
-assert.notDeepEqual = function notDeepEqual(actual, expected, message) {
-  if (_deepEqual(actual, expected)) {
-    fail(actual, expected, message, 'notDeepEqual', assert.notDeepEqual);
-  }
-};
-
-// 9. The strict equality assertion tests strict equality, as determined by ===.
-// assert.strictEqual(actual, expected, message_opt);
-
-assert.strictEqual = function strictEqual(actual, expected, message) {
-  if (actual !== expected) {
-    fail(actual, expected, message, '===', assert.strictEqual);
-  }
-};
-
-// 10. The strict non-equality assertion tests for strict inequality, as
-// determined by !==.  assert.notStrictEqual(actual, expected, message_opt);
-
-assert.notStrictEqual = function notStrictEqual(actual, expected, message) {
-  if (actual === expected) {
-    fail(actual, expected, message, '!==', assert.notStrictEqual);
-  }
-};
-
-function expectedException(actual, expected) {
-  if (!actual || !expected) {
-    return false;
-  }
-
-  if (Object.prototype.toString.call(expected) == '[object RegExp]') {
-    return expected.test(actual);
-  } else if (actual instanceof expected) {
-    return true;
-  } else if (expected.call({}, actual) === true) {
-    return true;
-  }
-
-  return false;
-}
-
-function _throws(shouldThrow, block, expected, message) {
-  var actual;
-
-  if (util.isString(expected)) {
-    message = expected;
-    expected = null;
-  }
-
-  try {
-    block();
-  } catch (e) {
-    actual = e;
-  }
-
-  message = (expected && expected.name ? ' (' + expected.name + ').' : '.') +
-            (message ? ' ' + message : '.');
-
-  if (shouldThrow && !actual) {
-    fail(actual, expected, 'Missing expected exception' + message);
-  }
-
-  if (!shouldThrow && expectedException(actual, expected)) {
-    fail(actual, expected, 'Got unwanted exception' + message);
-  }
-
-  if ((shouldThrow && actual && expected &&
-      !expectedException(actual, expected)) || (!shouldThrow && actual)) {
-    throw actual;
-  }
-}
-
-// 11. Expected to throw an error:
-// assert.throws(block, Error_opt, message_opt);
-
-assert.throws = function(block, /*optional*/error, /*optional*/message) {
-  _throws.apply(this, [true].concat(pSlice.call(arguments)));
-};
-
-// EXTENSION! This is annoying to write outside this module.
-assert.doesNotThrow = function(block, /*optional*/message) {
-  _throws.apply(this, [false].concat(pSlice.call(arguments)));
-};
-
-assert.ifError = function(err) { if (err) {throw err;}};
-
-var objectKeys = Object.keys || function (obj) {
-  var keys = [];
-  for (var key in obj) {
-    if (hasOwn.call(obj, key)) keys.push(key);
-  }
-  return keys;
-};
-
-},{"util/":6}],3:[function(require,module,exports){
-if (typeof Object.create === 'function') {
-  // implementation from standard node.js 'util' module
-  module.exports = function inherits(ctor, superCtor) {
-    ctor.super_ = superCtor
-    ctor.prototype = Object.create(superCtor.prototype, {
-      constructor: {
-        value: ctor,
-        enumerable: false,
-        writable: true,
-        configurable: true
-      }
-    });
-  };
-} else {
-  // old school shim for old browsers
-  module.exports = function inherits(ctor, superCtor) {
-    ctor.super_ = superCtor
-    var TempCtor = function () {}
-    TempCtor.prototype = superCtor.prototype
-    ctor.prototype = new TempCtor()
-    ctor.prototype.constructor = ctor
-  }
-}
-
-},{}],4:[function(require,module,exports){
-// shim for using process in browser
-
-var process = module.exports = {};
-var queue = [];
-var draining = false;
-var currentQueue;
-var queueIndex = -1;
-
-function cleanUpNextTick() {
-    draining = false;
-    if (currentQueue.length) {
-        queue = currentQueue.concat(queue);
-    } else {
-        queueIndex = -1;
-    }
-    if (queue.length) {
-        drainQueue();
-    }
-}
-
-function drainQueue() {
-    if (draining) {
-        return;
-    }
-    var timeout = setTimeout(cleanUpNextTick);
-    draining = true;
-
-    var len = queue.length;
-    while(len) {
-        currentQueue = queue;
-        queue = [];
-        while (++queueIndex < len) {
-            currentQueue[queueIndex].run();
-        }
-        queueIndex = -1;
-        len = queue.length;
-    }
-    currentQueue = null;
-    draining = false;
-    clearTimeout(timeout);
-}
-
-process.nextTick = function (fun) {
-    var args = new Array(arguments.length - 1);
-    if (arguments.length > 1) {
-        for (var i = 1; i < arguments.length; i++) {
-            args[i - 1] = arguments[i];
-        }
-    }
-    queue.push(new Item(fun, args));
-    if (queue.length === 1 && !draining) {
-        setTimeout(drainQueue, 0);
-    }
-};
-
-// v8 likes predictible objects
-function Item(fun, array) {
-    this.fun = fun;
-    this.array = array;
-}
-Item.prototype.run = function () {
-    this.fun.apply(null, this.array);
-};
-process.title = 'browser';
-process.browser = true;
-process.env = {};
-process.argv = [];
-process.version = ''; // empty string to avoid regexp issues
-process.versions = {};
-
-function noop() {}
-
-process.on = noop;
-process.addListener = noop;
-process.once = noop;
-process.off = noop;
-process.removeListener = noop;
-process.removeAllListeners = noop;
-process.emit = noop;
-
-process.binding = function (name) {
-    throw new Error('process.binding is not supported');
-};
-
-// TODO(shtylman)
-process.cwd = function () { return '/' };
-process.chdir = function (dir) {
-    throw new Error('process.chdir is not supported');
-};
-process.umask = function() { return 0; };
-
-},{}],5:[function(require,module,exports){
-module.exports = function isBuffer(arg) {
-  return arg && typeof arg === 'object'
-    && typeof arg.copy === 'function'
-    && typeof arg.fill === 'function'
-    && typeof arg.readUInt8 === 'function';
-}
-},{}],6:[function(require,module,exports){
-(function (process,global){
-// Copyright Joyent, Inc. and other Node contributors.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a
-// copy of this software and associated documentation files (the
-// "Software"), to deal in the Software without restriction, including
-// without limitation the rights to use, copy, modify, merge, publish,
-// distribute, sublicense, and/or sell copies of the Software, and to permit
-// persons to whom the Software is furnished to do so, subject to the
-// following conditions:
-//
-// The above copyright notice and this permission notice shall be included
-// in all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-// MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN
-// NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
-// DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
-// OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
-// USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-var formatRegExp = /%[sdj%]/g;
-exports.format = function(f) {
-  if (!isString(f)) {
-    var objects = [];
-    for (var i = 0; i < arguments.length; i++) {
-      objects.push(inspect(arguments[i]));
-    }
-    return objects.join(' ');
-  }
-
-  var i = 1;
-  var args = arguments;
-  var len = args.length;
-  var str = String(f).replace(formatRegExp, function(x) {
-    if (x === '%%') return '%';
-    if (i >= len) return x;
-    switch (x) {
-      case '%s': return String(args[i++]);
-      case '%d': return Number(args[i++]);
-      case '%j':
-        try {
-          return JSON.stringify(args[i++]);
-        } catch (_) {
-          return '[Circular]';
-        }
-      default:
-        return x;
-    }
-  });
-  for (var x = args[i]; i < len; x = args[++i]) {
-    if (isNull(x) || !isObject(x)) {
-      str += ' ' + x;
-    } else {
-      str += ' ' + inspect(x);
-    }
-  }
-  return str;
-};
-
-
-// Mark that a method should not be used.
-// Returns a modified function which warns once by default.
-// If --no-deprecation is set, then it is a no-op.
-exports.deprecate = function(fn, msg) {
-  // Allow for deprecating things in the process of starting up.
-  if (isUndefined(global.process)) {
-    return function() {
-      return exports.deprecate(fn, msg).apply(this, arguments);
-    };
-  }
-
-  if (process.noDeprecation === true) {
-    return fn;
-  }
-
-  var warned = false;
-  function deprecated() {
-    if (!warned) {
-      if (process.throwDeprecation) {
-        throw new Error(msg);
-      } else if (process.traceDeprecation) {
-        console.trace(msg);
-      } else {
-        console.error(msg);
-      }
-      warned = true;
-    }
-    return fn.apply(this, arguments);
-  }
-
-  return deprecated;
-};
-
-
-var debugs = {};
-var debugEnviron;
-exports.debuglog = function(set) {
-  if (isUndefined(debugEnviron))
-    debugEnviron = process.env.NODE_DEBUG || '';
-  set = set.toUpperCase();
-  if (!debugs[set]) {
-    if (new RegExp('\\b' + set + '\\b', 'i').test(debugEnviron)) {
-      var pid = process.pid;
-      debugs[set] = function() {
-        var msg = exports.format.apply(exports, arguments);
-        console.error('%s %d: %s', set, pid, msg);
-      };
-    } else {
-      debugs[set] = function() {};
-    }
-  }
-  return debugs[set];
-};
-
-
-/**
- * Echos the value of a value. Trys to print the value out
- * in the best way possible given the different types.
- *
- * @param {Object} obj The object to print out.
- * @param {Object} opts Optional options object that alters the output.
- */
-/* legacy: obj, showHidden, depth, colors*/
-function inspect(obj, opts) {
-  // default options
-  var ctx = {
-    seen: [],
-    stylize: stylizeNoColor
-  };
-  // legacy...
-  if (arguments.length >= 3) ctx.depth = arguments[2];
-  if (arguments.length >= 4) ctx.colors = arguments[3];
-  if (isBoolean(opts)) {
-    // legacy...
-    ctx.showHidden = opts;
-  } else if (opts) {
-    // got an "options" object
-    exports._extend(ctx, opts);
-  }
-  // set default options
-  if (isUndefined(ctx.showHidden)) ctx.showHidden = false;
-  if (isUndefined(ctx.depth)) ctx.depth = 2;
-  if (isUndefined(ctx.colors)) ctx.colors = false;
-  if (isUndefined(ctx.customInspect)) ctx.customInspect = true;
-  if (ctx.colors) ctx.stylize = stylizeWithColor;
-  return formatValue(ctx, obj, ctx.depth);
-}
-exports.inspect = inspect;
-
-
-// http://en.wikipedia.org/wiki/ANSI_escape_code#graphics
-inspect.colors = {
-  'bold' : [1, 22],
-  'italic' : [3, 23],
-  'underline' : [4, 24],
-  'inverse' : [7, 27],
-  'white' : [37, 39],
-  'grey' : [90, 39],
-  'black' : [30, 39],
-  'blue' : [34, 39],
-  'cyan' : [36, 39],
-  'green' : [32, 39],
-  'magenta' : [35, 39],
-  'red' : [31, 39],
-  'yellow' : [33, 39]
-};
-
-// Don't use 'blue' not visible on cmd.exe
-inspect.styles = {
-  'special': 'cyan',
-  'number': 'yellow',
-  'boolean': 'yellow',
-  'undefined': 'grey',
-  'null': 'bold',
-  'string': 'green',
-  'date': 'magenta',
-  // "name": intentionally not styling
-  'regexp': 'red'
-};
-
-
-function stylizeWithColor(str, styleType) {
-  var style = inspect.styles[styleType];
-
-  if (style) {
-    return '\u001b[' + inspect.colors[style][0] + 'm' + str +
-           '\u001b[' + inspect.colors[style][1] + 'm';
-  } else {
-    return str;
-  }
-}
-
-
-function stylizeNoColor(str, styleType) {
-  return str;
-}
-
-
-function arrayToHash(array) {
-  var hash = {};
-
-  array.forEach(function(val, idx) {
-    hash[val] = true;
-  });
-
-  return hash;
-}
-
-
-function formatValue(ctx, value, recurseTimes) {
-  // Provide a hook for user-specified inspect functions.
-  // Check that value is an object with an inspect function on it
-  if (ctx.customInspect &&
-      value &&
-      isFunction(value.inspect) &&
-      // Filter out the util module, it's inspect function is special
-      value.inspect !== exports.inspect &&
-      // Also filter out any prototype objects using the circular check.
-      !(value.constructor && value.constructor.prototype === value)) {
-    var ret = value.inspect(recurseTimes, ctx);
-    if (!isString(ret)) {
-      ret = formatValue(ctx, ret, recurseTimes);
-    }
-    return ret;
-  }
-
-  // Primitive types cannot have properties
-  var primitive = formatPrimitive(ctx, value);
-  if (primitive) {
-    return primitive;
-  }
-
-  // Look up the keys of the object.
-  var keys = Object.keys(value);
-  var visibleKeys = arrayToHash(keys);
-
-  if (ctx.showHidden) {
-    keys = Object.getOwnPropertyNames(value);
-  }
-
-  // IE doesn't make error fields non-enumerable
-  // http://msdn.microsoft.com/en-us/library/ie/dww52sbt(v=vs.94).aspx
-  if (isError(value)
-      && (keys.indexOf('message') >= 0 || keys.indexOf('description') >= 0)) {
-    return formatError(value);
-  }
-
-  // Some type of object without properties can be shortcutted.
-  if (keys.length === 0) {
-    if (isFunction(value)) {
-      var name = value.name ? ': ' + value.name : '';
-      return ctx.stylize('[Function' + name + ']', 'special');
-    }
-    if (isRegExp(value)) {
-      return ctx.stylize(RegExp.prototype.toString.call(value), 'regexp');
-    }
-    if (isDate(value)) {
-      return ctx.stylize(Date.prototype.toString.call(value), 'date');
-    }
-    if (isError(value)) {
-      return formatError(value);
-    }
-  }
-
-  var base = '', array = false, braces = ['{', '}'];
-
-  // Make Array say that they are Array
-  if (isArray(value)) {
-    array = true;
-    braces = ['[', ']'];
-  }
-
-  // Make functions say that they are functions
-  if (isFunction(value)) {
-    var n = value.name ? ': ' + value.name : '';
-    base = ' [Function' + n + ']';
-  }
-
-  // Make RegExps say that they are RegExps
-  if (isRegExp(value)) {
-    base = ' ' + RegExp.prototype.toString.call(value);
-  }
-
-  // Make dates with properties first say the date
-  if (isDate(value)) {
-    base = ' ' + Date.prototype.toUTCString.call(value);
-  }
-
-  // Make error with message first say the error
-  if (isError(value)) {
-    base = ' ' + formatError(value);
-  }
-
-  if (keys.length === 0 && (!array || value.length == 0)) {
-    return braces[0] + base + braces[1];
-  }
-
-  if (recurseTimes < 0) {
-    if (isRegExp(value)) {
-      return ctx.stylize(RegExp.prototype.toString.call(value), 'regexp');
-    } else {
-      return ctx.stylize('[Object]', 'special');
-    }
-  }
-
-  ctx.seen.push(value);
-
-  var output;
-  if (array) {
-    output = formatArray(ctx, value, recurseTimes, visibleKeys, keys);
-  } else {
-    output = keys.map(function(key) {
-      return formatProperty(ctx, value, recurseTimes, visibleKeys, key, array);
-    });
-  }
-
-  ctx.seen.pop();
-
-  return reduceToSingleString(output, base, braces);
-}
-
-
-function formatPrimitive(ctx, value) {
-  if (isUndefined(value))
-    return ctx.stylize('undefined', 'undefined');
-  if (isString(value)) {
-    var simple = '\'' + JSON.stringify(value).replace(/^"|"$/g, '')
-                                             .replace(/'/g, "\\'")
-                                             .replace(/\\"/g, '"') + '\'';
-    return ctx.stylize(simple, 'string');
-  }
-  if (isNumber(value))
-    return ctx.stylize('' + value, 'number');
-  if (isBoolean(value))
-    return ctx.stylize('' + value, 'boolean');
-  // For some reason typeof null is "object", so special case here.
-  if (isNull(value))
-    return ctx.stylize('null', 'null');
-}
-
-
-function formatError(value) {
-  return '[' + Error.prototype.toString.call(value) + ']';
-}
-
-
-function formatArray(ctx, value, recurseTimes, visibleKeys, keys) {
-  var output = [];
-  for (var i = 0, l = value.length; i < l; ++i) {
-    if (hasOwnProperty(value, String(i))) {
-      output.push(formatProperty(ctx, value, recurseTimes, visibleKeys,
-          String(i), true));
-    } else {
-      output.push('');
-    }
-  }
-  keys.forEach(function(key) {
-    if (!key.match(/^\d+$/)) {
-      output.push(formatProperty(ctx, value, recurseTimes, visibleKeys,
-          key, true));
-    }
-  });
-  return output;
-}
-
-
-function formatProperty(ctx, value, recurseTimes, visibleKeys, key, array) {
-  var name, str, desc;
-  desc = Object.getOwnPropertyDescriptor(value, key) || { value: value[key] };
-  if (desc.get) {
-    if (desc.set) {
-      str = ctx.stylize('[Getter/Setter]', 'special');
-    } else {
-      str = ctx.stylize('[Getter]', 'special');
-    }
-  } else {
-    if (desc.set) {
-      str = ctx.stylize('[Setter]', 'special');
-    }
-  }
-  if (!hasOwnProperty(visibleKeys, key)) {
-    name = '[' + key + ']';
-  }
-  if (!str) {
-    if (ctx.seen.indexOf(desc.value) < 0) {
-      if (isNull(recurseTimes)) {
-        str = formatValue(ctx, desc.value, null);
-      } else {
-        str = formatValue(ctx, desc.value, recurseTimes - 1);
-      }
-      if (str.indexOf('\n') > -1) {
-        if (array) {
-          str = str.split('\n').map(function(line) {
-            return '  ' + line;
-          }).join('\n').substr(2);
-        } else {
-          str = '\n' + str.split('\n').map(function(line) {
-            return '   ' + line;
-          }).join('\n');
-        }
-      }
-    } else {
-      str = ctx.stylize('[Circular]', 'special');
-    }
-  }
-  if (isUndefined(name)) {
-    if (array && key.match(/^\d+$/)) {
-      return str;
-    }
-    name = JSON.stringify('' + key);
-    if (name.match(/^"([a-zA-Z_][a-zA-Z_0-9]*)"$/)) {
-      name = name.substr(1, name.length - 2);
-      name = ctx.stylize(name, 'name');
-    } else {
-      name = name.replace(/'/g, "\\'")
-                 .replace(/\\"/g, '"')
-                 .replace(/(^"|"$)/g, "'");
-      name = ctx.stylize(name, 'string');
-    }
-  }
-
-  return name + ': ' + str;
-}
-
-
-function reduceToSingleString(output, base, braces) {
-  var numLinesEst = 0;
-  var length = output.reduce(function(prev, cur) {
-    numLinesEst++;
-    if (cur.indexOf('\n') >= 0) numLinesEst++;
-    return prev + cur.replace(/\u001b\[\d\d?m/g, '').length + 1;
-  }, 0);
-
-  if (length > 60) {
-    return braces[0] +
-           (base === '' ? '' : base + '\n ') +
-           ' ' +
-           output.join(',\n  ') +
-           ' ' +
-           braces[1];
-  }
-
-  return braces[0] + base + ' ' + output.join(', ') + ' ' + braces[1];
-}
-
-
-// NOTE: These type checking functions intentionally don't use `instanceof`
-// because it is fragile and can be easily faked with `Object.create()`.
-function isArray(ar) {
-  return Array.isArray(ar);
-}
-exports.isArray = isArray;
-
-function isBoolean(arg) {
-  return typeof arg === 'boolean';
-}
-exports.isBoolean = isBoolean;
-
-function isNull(arg) {
-  return arg === null;
-}
-exports.isNull = isNull;
-
-function isNullOrUndefined(arg) {
-  return arg == null;
-}
-exports.isNullOrUndefined = isNullOrUndefined;
-
-function isNumber(arg) {
-  return typeof arg === 'number';
-}
-exports.isNumber = isNumber;
-
-function isString(arg) {
-  return typeof arg === 'string';
-}
-exports.isString = isString;
-
-function isSymbol(arg) {
-  return typeof arg === 'symbol';
-}
-exports.isSymbol = isSymbol;
-
-function isUndefined(arg) {
-  return arg === void 0;
-}
-exports.isUndefined = isUndefined;
-
-function isRegExp(re) {
-  return isObject(re) && objectToString(re) === '[object RegExp]';
-}
-exports.isRegExp = isRegExp;
-
-function isObject(arg) {
-  return typeof arg === 'object' && arg !== null;
-}
-exports.isObject = isObject;
-
-function isDate(d) {
-  return isObject(d) && objectToString(d) === '[object Date]';
-}
-exports.isDate = isDate;
-
-function isError(e) {
-  return isObject(e) &&
-      (objectToString(e) === '[object Error]' || e instanceof Error);
-}
-exports.isError = isError;
-
-function isFunction(arg) {
-  return typeof arg === 'function';
-}
-exports.isFunction = isFunction;
-
-function isPrimitive(arg) {
-  return arg === null ||
-         typeof arg === 'boolean' ||
-         typeof arg === 'number' ||
-         typeof arg === 'string' ||
-         typeof arg === 'symbol' ||  // ES6 symbol
-         typeof arg === 'undefined';
-}
-exports.isPrimitive = isPrimitive;
-
-exports.isBuffer = require('./support/isBuffer');
-
-function objectToString(o) {
-  return Object.prototype.toString.call(o);
-}
-
-
-function pad(n) {
-  return n < 10 ? '0' + n.toString(10) : n.toString(10);
-}
-
-
-var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep',
-              'Oct', 'Nov', 'Dec'];
-
-// 26 Feb 16:19:34
-function timestamp() {
-  var d = new Date();
-  var time = [pad(d.getHours()),
-              pad(d.getMinutes()),
-              pad(d.getSeconds())].join(':');
-  return [d.getDate(), months[d.getMonth()], time].join(' ');
-}
-
-
-// log is just a thin wrapper to console.log that prepends a timestamp
-exports.log = function() {
-  console.log('%s - %s', timestamp(), exports.format.apply(exports, arguments));
-};
-
-
-/**
- * Inherit the prototype methods from one constructor into another.
- *
- * The Function.prototype.inherits from lang.js rewritten as a standalone
- * function (not on Function.prototype). NOTE: If this file is to be loaded
- * during bootstrapping this function needs to be rewritten using some native
- * functions as prototype setup using normal JavaScript does not work as
- * expected during bootstrapping (see mirror.js in r114903).
- *
- * @param {function} ctor Constructor function which needs to inherit the
- *     prototype.
- * @param {function} superCtor Constructor function to inherit prototype from.
- */
-exports.inherits = require('inherits');
-
-exports._extend = function(origin, add) {
-  // Don't do anything if add isn't an object
-  if (!add || !isObject(add)) return origin;
-
-  var keys = Object.keys(add);
-  var i = keys.length;
-  while (i--) {
-    origin[keys[i]] = add[keys[i]];
-  }
-  return origin;
-};
-
-function hasOwnProperty(obj, prop) {
-  return Object.prototype.hasOwnProperty.call(obj, prop);
-}
-
-}).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./support/isBuffer":5,"_process":4,"inherits":3}],7:[function(require,module,exports){
 'use strict';
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
@@ -1152,16 +77,17 @@ var _runningAverageLibRunningAverageJs2 = _interopRequireDefault(_runningAverage
 			var averageCentroid = new _runningAverageLibRunningAverageJs2['default']();
 			var averageRMS = new _runningAverageLibRunningAverageJs2['default']();
 			var sub = new _subtractive2['default'](ctx, function (data) {
-				averageCentroid.push(data.spectralCentroid);
+				averageCentroid.push(data.spectralCentroid / SAMP_RATE / 2);
 				averageRMS.push(data.rms);
 			});
 			var faders = sub.getFaders();
 			var outs = [];
 			for (var _i = 0; _i < faders.length; _i++) {
-				value = Math.random() * (faders[_i].max - faders[_i].min) + faders[_i].min;
+				v = Math.random();
+				value = v * (faders[_i].max - faders[_i].min) + faders[_i].min;
 
 				faders[_i].handler(value);
-				outs.push(value);
+				outs.push(v);
 			}
 			ctx.startRendering().then(function () {
 				window.data.push({
@@ -1173,6 +99,7 @@ var _runningAverageLibRunningAverageJs2 = _interopRequireDefault(_runningAverage
 		};
 
 		for (var i = 0; i < PRESET_COUNT; i++) {
+			var v;
 			var value;
 
 			_loop(i);
@@ -1180,7 +107,7 @@ var _runningAverageLibRunningAverageJs2 = _interopRequireDefault(_runningAverage
 	}, false);
 })();
 
-},{"./../../bower_components/running-average/lib/running-average.js":1,"./subtractive":8}],8:[function(require,module,exports){
+},{"./../../bower_components/running-average/lib/running-average.js":1,"./subtractive":3}],3:[function(require,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', {
@@ -1191,7 +118,7 @@ var _createClass = (function () { function defineProperties(target, props) { for
 
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError('Cannot call a class as a function'); } }
 
-require('./meyda.es6');
+require('./meyda.min');
 
 var Subtractive = (function () {
 	function Subtractive(context, meydaHandler) {
@@ -1312,1186 +239,697 @@ var Subtractive = (function () {
 exports['default'] = Subtractive;
 module.exports = exports['default'];
 
-},{"./meyda.es6":28}],9:[function(require,module,exports){
-'use strict';
+},{"./meyda.min":4}],4:[function(require,module,exports){
+(function (global){
+"use strict";
 
-!function(exports, undefined) {
-
-  var
-    // If the typed array is unspecified, use this.
-    DefaultArrayType = Float32Array,
-    // Simple math functions we need.
-    sqrt = Math.sqrt,
-    sqr = function(number) {return Math.pow(number, 2)},
-    // Internal convenience copies of the exported functions
-    isComplexArray,
-    ComplexArray
-
-  exports.isComplexArray = isComplexArray = function(obj) {
-    return obj !== undefined &&
-      obj.hasOwnProperty !== undefined &&
-      obj.hasOwnProperty('real') &&
-      obj.hasOwnProperty('imag')
-  }
-
-  exports.ComplexArray = ComplexArray = function(other, opt_array_type){
-    if (isComplexArray(other)) {
-      // Copy constuctor.
-      this.ArrayType = other.ArrayType
-      this.real = new this.ArrayType(other.real)
-      this.imag = new this.ArrayType(other.imag)
-    } else {
-      this.ArrayType = opt_array_type || DefaultArrayType
-      // other can be either an array or a number.
-      this.real = new this.ArrayType(other)
-      this.imag = new this.ArrayType(this.real.length)
-    }
-
-    this.length = this.real.length
-  }
-
-  ComplexArray.prototype.toString = function() {
-    var components = []
-
-    this.forEach(function(c_value, i) {
-      components.push(
-        '(' +
-        c_value.real.toFixed(2) + ',' +
-        c_value.imag.toFixed(2) +
-        ')'
-      )
-    })
-
-    return '[' + components.join(',') + ']'
-  }
-
-  // In-place mapper.
-  ComplexArray.prototype.map = function(mapper) {
-    var
-      i,
-      n = this.length,
-      // For GC efficiency, pass a single c_value object to the mapper.
-      c_value = {}
-
-    for (i = 0; i < n; i++) {
-      c_value.real = this.real[i]
-      c_value.imag = this.imag[i]
-      mapper(c_value, i, n)
-      this.real[i] = c_value.real
-      this.imag[i] = c_value.imag
-    }
-
-    return this
-  }
-
-  ComplexArray.prototype.forEach = function(iterator) {
-    var
-      i,
-      n = this.length,
-      // For consistency with .map.
-      c_value = {}
-
-    for (i = 0; i < n; i++) {
-      c_value.real = this.real[i]
-      c_value.imag = this.imag[i]
-      iterator(c_value, i, n)
-    }
-  }
-
-  ComplexArray.prototype.conjugate = function() {
-    return (new ComplexArray(this)).map(function(value) {
-      value.imag *= -1
-    })
-  }
-
-  // Helper so we can make ArrayType objects returned have similar interfaces
-  //   to ComplexArrays.
-  function iterable(obj) {
-    if (!obj.forEach)
-      obj.forEach = function(iterator) {
-        var i, n = this.length
-
-        for (i = 0; i < n; i++)
-          iterator(this[i], i, n)
-      }
-
-    return obj
-  }
-
-  ComplexArray.prototype.magnitude = function() {
-    var mags = new this.ArrayType(this.length)
-
-    this.forEach(function(value, i) {
-      mags[i] = sqrt(sqr(value.real) + sqr(value.imag))
-    })
-
-    // ArrayType will not necessarily be iterable: make it so.
-    return iterable(mags)
-  }
-}(typeof exports === 'undefined' && (this.complex_array = {}) || exports)
-
-},{}],10:[function(require,module,exports){
-'use strict';
-
-!function(exports, complex_array) {
-
-  var
-    ComplexArray = complex_array.ComplexArray,
-    // Math constants and functions we need.
-    PI = Math.PI,
-    SQRT1_2 = Math.SQRT1_2,
-    sqrt = Math.sqrt,
-    cos = Math.cos,
-    sin = Math.sin
-
-  ComplexArray.prototype.FFT = function() {
-    return FFT(this, false)
-  }
-
-  exports.FFT = function(input) {
-    return ensureComplexArray(input).FFT()
-  }
-
-  ComplexArray.prototype.InvFFT = function() {
-    return FFT(this, true)
-  }
-
-  exports.InvFFT = function(input) {
-    return ensureComplexArray(input).InvFFT()
-  }
-
-  // Applies a frequency-space filter to input, and returns the real-space
-  // filtered input.
-  // filterer accepts freq, i, n and modifies freq.real and freq.imag.
-  ComplexArray.prototype.frequencyMap = function(filterer) {
-    return this.FFT().map(filterer).InvFFT()
-  }
-
-  exports.frequencyMap = function(input, filterer) {
-    return ensureComplexArray(input).frequencyMap(filterer)
-  }
-
-  function ensureComplexArray(input) {
-    return complex_array.isComplexArray(input) && input ||
-        new ComplexArray(input)
-  }
-
-  function FFT(input, inverse) {
-    var n = input.length
-
-    if (n & (n - 1)) {
-      return FFT_Recursive(input, inverse)
-    } else {
-      return FFT_2_Iterative(input, inverse)
-    }
-  }
-
-  function FFT_Recursive(input, inverse) {
-    var
-      n = input.length,
-      // Counters.
-      i, j,
-      output,
-      // Complex multiplier and its delta.
-      f_r, f_i, del_f_r, del_f_i,
-      // Lowest divisor and remainder.
-      p, m,
-      normalisation,
-      recursive_result,
-      _swap, _real, _imag
-
-    if (n === 1) {
-      return input
-    }
-
-    output = new ComplexArray(n, input.ArrayType)
-
-    // Use the lowest odd factor, so we are able to use FFT_2_Iterative in the
-    // recursive transforms optimally.
-    p = LowestOddFactor(n)
-    m = n / p
-    normalisation = 1 / sqrt(p)
-    recursive_result = new ComplexArray(m, input.ArrayType)
-
-    // Loops go like O(n Σ p_i), where p_i are the prime factors of n.
-    // for a power of a prime, p, this reduces to O(n p log_p n)
-    for(j = 0; j < p; j++) {
-      for(i = 0; i < m; i++) {
-        recursive_result.real[i] = input.real[i * p + j]
-        recursive_result.imag[i] = input.imag[i * p + j]
-      }
-      // Don't go deeper unless necessary to save allocs.
-      if (m > 1) {
-        recursive_result = FFT(recursive_result, inverse)
-      }
-
-      del_f_r = cos(2*PI*j/n)
-      del_f_i = (inverse ? -1 : 1) * sin(2*PI*j/n)
-      f_r = 1
-      f_i = 0
-
-      for(i = 0; i < n; i++) {
-        _real = recursive_result.real[i % m]
-        _imag = recursive_result.imag[i % m]
-
-        output.real[i] += f_r * _real - f_i * _imag
-        output.imag[i] += f_r * _imag + f_i * _real
-
-        _swap = f_r * del_f_r - f_i * del_f_i
-        f_i = f_r * del_f_i + f_i * del_f_r
-        f_r = _swap
-      }
-    }
-
-    // Copy back to input to match FFT_2_Iterative in-placeness
-    // TODO: faster way of making this in-place?
-    for(i = 0; i < n; i++) {
-      input.real[i] = normalisation * output.real[i]
-      input.imag[i] = normalisation * output.imag[i]
-    }
-
-    return input
-  }
-
-  function FFT_2_Iterative(input, inverse) {
-    var
-      n = input.length,
-      // Counters.
-      i, j,
-      output, output_r, output_i,
-      // Complex multiplier and its delta.
-      f_r, f_i, del_f_r, del_f_i, temp,
-      // Temporary loop variables.
-      l_index, r_index,
-      left_r, left_i, right_r, right_i,
-      // width of each sub-array for which we're iteratively calculating FFT.
-      width
-
-    output = BitReverseComplexArray(input)
-    output_r = output.real
-    output_i = output.imag
-    // Loops go like O(n log n):
-    //   width ~ log n; i,j ~ n
-    width = 1
-    while (width < n) {
-      del_f_r = cos(PI/width)
-      del_f_i = (inverse ? -1 : 1) * sin(PI/width)
-      for (i = 0; i < n/(2*width); i++) {
-        f_r = 1
-        f_i = 0
-        for (j = 0; j < width; j++) {
-          l_index = 2*i*width + j
-          r_index = l_index + width
-
-          left_r = output_r[l_index]
-          left_i = output_i[l_index]
-          right_r = f_r * output_r[r_index] - f_i * output_i[r_index]
-          right_i = f_i * output_r[r_index] + f_r * output_i[r_index]
-
-          output_r[l_index] = SQRT1_2 * (left_r + right_r)
-          output_i[l_index] = SQRT1_2 * (left_i + right_i)
-          output_r[r_index] = SQRT1_2 * (left_r - right_r)
-          output_i[r_index] = SQRT1_2 * (left_i - right_i)
-          temp = f_r * del_f_r - f_i * del_f_i
-          f_i = f_r * del_f_i + f_i * del_f_r
-          f_r = temp
+!(function t(e, r, n) {
+  function o(i, u) {
+    if (!r[i]) {
+      if (!e[i]) {
+        var s = "function" == typeof require && require;if (!u && s) return s(i, !0);if (a) return a(i, !0);var c = new Error("Cannot find module '" + i + "'");throw (c.code = "MODULE_NOT_FOUND", c);
+      }var f = r[i] = { exports: {} };e[i][0].call(f.exports, function (t) {
+        var r = e[i][1][t];return o(r ? r : t);
+      }, f, f.exports, t, e, r, n);
+    }return r[i].exports;
+  }for (var a = "function" == typeof require && require, i = 0; i < n.length; i++) o(n[i]);return o;
+})({ 1: [function (t, e, r) {
+    function n(t, e) {
+      return m.isUndefined(e) ? "" + e : m.isNumber(e) && !isFinite(e) ? e.toString() : m.isFunction(e) || m.isRegExp(e) ? e.toString() : e;
+    }function o(t, e) {
+      return m.isString(t) ? t.length < e ? t : t.slice(0, e) : t;
+    }function a(t) {
+      return o(JSON.stringify(t.actual, n), 128) + " " + t.operator + " " + o(JSON.stringify(t.expected, n), 128);
+    }function i(t, e, r, n, o) {
+      throw new d.AssertionError({ message: r, actual: t, expected: e, operator: n, stackStartFunction: o });
+    }function u(t, e) {
+      t || i(t, !0, e, "==", d.ok);
+    }function s(t, e) {
+      if (t === e) return !0;if (m.isBuffer(t) && m.isBuffer(e)) {
+        if (t.length != e.length) return !1;for (var r = 0; r < t.length; r++) if (t[r] !== e[r]) return !1;return !0;
+      }return m.isDate(t) && m.isDate(e) ? t.getTime() === e.getTime() : m.isRegExp(t) && m.isRegExp(e) ? t.source === e.source && t.global === e.global && t.multiline === e.multiline && t.lastIndex === e.lastIndex && t.ignoreCase === e.ignoreCase : m.isObject(t) || m.isObject(e) ? f(t, e) : t == e;
+    }function c(t) {
+      return "[object Arguments]" == Object.prototype.toString.call(t);
+    }function f(t, e) {
+      if (m.isNullOrUndefined(t) || m.isNullOrUndefined(e)) return !1;if (t.prototype !== e.prototype) return !1;if (m.isPrimitive(t) || m.isPrimitive(e)) return t === e;var r = c(t),
+          n = c(e);if (r && !n || !r && n) return !1;if (r) return (t = y.call(t), e = y.call(e), s(t, e));var o,
+          a,
+          i = g(t),
+          u = g(e);if (i.length != u.length) return !1;for (i.sort(), u.sort(), a = i.length - 1; a >= 0; a--) if (i[a] != u[a]) return !1;for (a = i.length - 1; a >= 0; a--) if ((o = i[a], !s(t[o], e[o]))) return !1;return !0;
+    }function l(t, e) {
+      return t && e ? "[object RegExp]" == Object.prototype.toString.call(e) ? e.test(t) : t instanceof e ? !0 : e.call({}, t) === !0 ? !0 : !1 : !1;
+    }function p(t, e, r, n) {
+      var o;m.isString(r) && (n = r, r = null);try {
+        e();
+      } catch (a) {
+        o = a;
+      }if ((n = (r && r.name ? " (" + r.name + ")." : ".") + (n ? " " + n : "."), t && !o && i(o, r, "Missing expected exception" + n), !t && l(o, r) && i(o, r, "Got unwanted exception" + n), t && o && r && !l(o, r) || !t && o)) throw o;
+    }var m = t("util/"),
+        y = Array.prototype.slice,
+        h = Object.prototype.hasOwnProperty,
+        d = e.exports = u;d.AssertionError = function (t) {
+      this.name = "AssertionError", this.actual = t.actual, this.expected = t.expected, this.operator = t.operator, t.message ? (this.message = t.message, this.generatedMessage = !1) : (this.message = a(this), this.generatedMessage = !0);var e = t.stackStartFunction || i;if (Error.captureStackTrace) Error.captureStackTrace(this, e);else {
+        var r = new Error();if (r.stack) {
+          var n = r.stack,
+              o = e.name,
+              u = n.indexOf("\n" + o);if (u >= 0) {
+            var s = n.indexOf("\n", u + 1);n = n.substring(s + 1);
+          }this.stack = n;
         }
       }
-      width <<= 1
-    }
-
-    return output
-  }
-
-  function BitReverseIndex(index, n) {
-    var bitreversed_index = 0
-
-    while (n > 1) {
-      bitreversed_index <<= 1
-      bitreversed_index += index & 1
-      index >>= 1
-      n >>= 1
-    }
-    return bitreversed_index
-  }
-
-  function BitReverseComplexArray(array) {
-    var n = array.length,
-        flips = {},
-        swap,
-        i
-
-    for(i = 0; i < n; i++) {
-      var r_i = BitReverseIndex(i, n)
-
-      if (flips.hasOwnProperty(i) || flips.hasOwnProperty(r_i)) continue
-
-      swap = array.real[r_i]
-      array.real[r_i] = array.real[i]
-      array.real[i] = swap
-
-      swap = array.imag[r_i]
-      array.imag[r_i] = array.imag[i]
-      array.imag[i] = swap
-
-      flips[i] = flips[r_i] = true
-    }
-
-    return array
-  }
-
-  function LowestOddFactor(n) {
-    var factor = 3,
-        sqrt_n = sqrt(n)
-
-    while(factor <= sqrt_n) {
-      if (n % factor === 0) return factor
-      factor = factor + 2
-    }
-    return n
-  }
-
-}(
-  typeof exports === 'undefined' && (this.fft = {}) || exports,
-  typeof require === 'undefined' && (this.complex_array) ||
-    require('./complex_array')
-)
-
-},{"./complex_array":9}],11:[function(require,module,exports){
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-	value: true
-});
-
-function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } else { var newObj = {}; if (obj != null) { for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) newObj[key] = obj[key]; } } newObj["default"] = obj; return newObj; } }
-
-var _assert = require('assert');
-
-var assert = _interopRequireWildcard(_assert);
-
-exports["default"] = function () {
-	if (typeof arguments[0].signal !== "object") {
-		throw new TypeError();
-	}
-
-	var energy = 0;
-	for (var i = 0; i < arguments[0].signal.length; i++) {
-		energy += Math.pow(Math.abs(arguments[0].signal[i]), 2);
-	}
-	return energy;
-};
-
-module.exports = exports["default"];
-
-},{"assert":2}],12:[function(require,module,exports){
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-exports.mu = mu;
-
-function mu(i, amplitudeSpect) {
-  var numerator = 0;
-  var denominator = 0;
-  for (var k = 0; k < amplitudeSpect.length; k++) {
-    numerator += Math.pow(k, i) * Math.abs(amplitudeSpect[k]);
-    denominator += amplitudeSpect[k];
-  }
-  return numerator / denominator;
-}
-
-},{}],13:[function(require,module,exports){
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-
-exports["default"] = function (args) {
-  if (typeof args.ampSpectrum !== "object") {
-    throw new TypeError();
-  }
-  var NUM_BARK_BANDS = 24;
-  var specific = new Float32Array(NUM_BARK_BANDS);
-  var total = 0;
-  var normalisedSpectrum = args.ampSpectrum;
-  var bbLimits = new Int32Array(NUM_BARK_BANDS + 1);
-
-  bbLimits[0] = 0;
-  var currentBandEnd = args.barkScale[normalisedSpectrum.length - 1] / NUM_BARK_BANDS;
-  var currentBand = 1;
-  for (var i = 0; i < normalisedSpectrum.length; i++) {
-    while (args.barkScale[i] > currentBandEnd) {
-      bbLimits[currentBand++] = i;
-      currentBandEnd = currentBand * args.barkScale[normalisedSpectrum.length - 1] / NUM_BARK_BANDS;
-    }
-  }
-
-  bbLimits[NUM_BARK_BANDS] = normalisedSpectrum.length - 1;
-
-  //process
-
-  for (var i = 0; i < NUM_BARK_BANDS; i++) {
-    var sum = 0;
-    for (var j = bbLimits[i]; j < bbLimits[i + 1]; j++) {
-
-      sum += normalisedSpectrum[j];
-    }
-    specific[i] = Math.pow(sum, 0.23);
-  }
-
-  //get total loudness
-  for (var i = 0; i < specific.length; i++) {
-    total += specific[i];
-  }
-  return {
-    "specific": specific,
-    "total": total
-  };
-};
-
-module.exports = exports["default"];
-
-},{}],14:[function(require,module,exports){
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-	value: true
-});
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
-
-var _powerSpectrum = require('./powerSpectrum');
-
-var _powerSpectrum2 = _interopRequireDefault(_powerSpectrum);
-
-var melToFreq = function melToFreq(melValue) {
-	var freqValue = 700 * (Math.exp(melValue / 1125) - 1);
-	return freqValue;
-};
-
-var freqToMel = function freqToMel(freqValue) {
-	var melValue = 1125 * Math.log(1 + freqValue / 700);
-	return melValue;
-};
-
-exports["default"] = function (args) {
-	if (typeof args.ampSpectrum !== "object") {
-		throw new TypeError();
-	}
-	//used tutorial from http://practicalcryptography.com/miscellaneous/machine-learning/guide-mel-frequency-cepstral-coefficients-mfccs/
-	var powSpec = (0, _powerSpectrum2["default"])(args);
-	var numFilters = 26; //26 filters is standard
-	var melValues = new Float32Array(numFilters + 2); //the +2 is the upper and lower limits
-	var melValuesInFreq = new Float32Array(numFilters + 2);
-	//Generate limits in Hz - from 0 to the nyquist.
-	var lowerLimitFreq = 0;
-	var upperLimitFreq = args.sampleRate / 2;
-	//Convert the limits to Mel
-	var lowerLimitMel = freqToMel(lowerLimitFreq);
-	var upperLimitMel = freqToMel(upperLimitFreq);
-	//Find the range
-	var range = upperLimitMel - lowerLimitMel;
-	//Find the range as part of the linear interpolation
-	var valueToAdd = range / (numFilters + 1);
-
-	var fftBinsOfFreq = Array(numFilters + 2);
-
-	for (var i = 0; i < melValues.length; i++) {
-		//Initialising the mel frequencies - they are just a linear interpolation between the lower and upper limits.
-		melValues[i] = i * valueToAdd;
-		//Convert back to Hz
-		melValuesInFreq[i] = melToFreq(melValues[i]);
-		//Find the corresponding bins
-		fftBinsOfFreq[i] = Math.floor((args.bufferSize + 1) * melValuesInFreq[i] / args.sampleRate);
-	}
-
-	var filterBank = Array(numFilters);
-	for (var j = 0; j < filterBank.length; j++) {
-		//creating a two dimensional array of size numFiltes * (args.buffersize/2)+1 and pre-populating the arrays with 0s.
-		filterBank[j] = Array.apply(null, new Array(args.bufferSize / 2 + 1)).map(Number.prototype.valueOf, 0);
-		//creating the lower and upper slopes for each bin
-		for (var i = fftBinsOfFreq[j]; i < fftBinsOfFreq[j + 1]; i++) {
-			filterBank[j][i] = (i - fftBinsOfFreq[j]) / (fftBinsOfFreq[j + 1] - fftBinsOfFreq[j]);
-		}
-		for (var i = fftBinsOfFreq[j + 1]; i < fftBinsOfFreq[j + 2]; i++) {
-			filterBank[j][i] = (fftBinsOfFreq[j + 2] - i) / (fftBinsOfFreq[j + 2] - fftBinsOfFreq[j + 1]);
-		}
-	}
-
-	var loggedMelBands = new Float32Array(numFilters);
-	for (var i = 0; i < loggedMelBands.length; i++) {
-		loggedMelBands[i] = 0;
-		for (var j = 0; j < args.bufferSize / 2; j++) {
-			//point multiplication between power spectrum and filterbanks.
-			filterBank[i][j] = filterBank[i][j] * powSpec[j];
-
-			//summing up all of the coefficients into one array
-			loggedMelBands[i] += filterBank[i][j];
-		}
-		//log each coefficient
-		loggedMelBands[i] = Math.log(loggedMelBands[i]);
-	}
-
-	//dct
-	var k = Math.PI / numFilters;
-	var w1 = 1.0 / Math.sqrt(numFilters);
-	var w2 = Math.sqrt(2.0 / numFilters);
-	var numCoeffs = 13;
-	var dctMatrix = new Float32Array(numCoeffs * numFilters);
-
-	for (var i = 0; i < numCoeffs; i++) {
-		for (var j = 0; j < numFilters; j++) {
-			var idx = i + j * numCoeffs;
-			if (i === 0) {
-				dctMatrix[idx] = w1 * Math.cos(k * (i + 1) * (j + 0.5));
-			} else {
-				dctMatrix[idx] = w2 * Math.cos(k * (i + 1) * (j + 0.5));
-			}
-		}
-	}
-
-	var mfccs = new Float32Array(numCoeffs);
-	for (var _k = 0; _k < numCoeffs; _k++) {
-		var v = 0;
-		for (var n = 0; n < numFilters; n++) {
-			var idx = _k + n * numCoeffs;
-			v += dctMatrix[idx] * loggedMelBands[n];
-		}
-		mfccs[_k] = v / numCoeffs;
-	}
-	return mfccs;
-};
-
-module.exports = exports["default"];
-
-},{"./powerSpectrum":17}],15:[function(require,module,exports){
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
-
-var _loudness = require('./loudness');
-
-var _loudness2 = _interopRequireDefault(_loudness);
-
-exports["default"] = function () {
-  if (typeof arguments[0].signal !== "object") {
-    throw new TypeError();
-  }
-  var loudnessValue = (0, _loudness2["default"])(arguments[0]);
-  var spec = loudnessValue.specific;
-  var output = 0;
-
-  for (var i = 0; i < spec.length; i++) {
-    if (i < 15) {
-      output += (i + 1) * spec[i + 1];
-    } else {
-      output += 0.066 * Math.exp(0.171 * (i + 1));
-    }
-  }
-  output *= 0.11 / loudnessValue.total;
-
-  return output;
-};
-
-module.exports = exports["default"];
-
-},{"./loudness":13}],16:[function(require,module,exports){
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-	value: true
-});
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { "default": obj }; }
-
-var _loudness = require('./loudness');
-
-var _loudness2 = _interopRequireDefault(_loudness);
-
-exports["default"] = function () {
-	if (typeof arguments[0].signal !== "object") {
-		throw new TypeError();
-	}
-
-	var loudnessValue = (0, _loudness2["default"])(arguments[0]);
-
-	var max = 0;
-	for (var i = 0; i < loudnessValue.specific.length; i++) {
-		if (loudnessValue.specific[i] > max) {
-			max = loudnessValue.specific[i];
-		}
-	}
-
-	var spread = Math.pow((loudnessValue.total - max) / loudnessValue.total, 2);
-
-	return spread;
-};
-
-module.exports = exports["default"];
-
-},{"./loudness":13}],17:[function(require,module,exports){
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-	value: true
-});
-
-exports["default"] = function () {
-	if (typeof arguments[0].ampSpectrum !== "object") {
-		throw new TypeError();
-	}
-	var powerSpectrum = new Float32Array(arguments[0].ampSpectrum.length);
-	for (var i = 0; i < powerSpectrum.length; i++) {
-		powerSpectrum[i] = Math.pow(arguments[0].ampSpectrum[i], 2);
-	}
-	return powerSpectrum;
-};
-
-module.exports = exports["default"];
-
-},{}],18:[function(require,module,exports){
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-	value: true
-});
-
-exports["default"] = function (args) {
-	if (typeof args.signal !== "object") {
-		throw new TypeError();
-	}
-	var rms = 0;
-	for (var i = 0; i < args.signal.length; i++) {
-		rms += Math.pow(args.signal[i], 2);
-	}
-	rms = rms / args.signal.length;
-	rms = Math.sqrt(rms);
-
-	return rms;
-};
-
-module.exports = exports["default"];
-
-},{}],19:[function(require,module,exports){
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-	value: true
-});
-
-var _extractorUtilities = require('./extractorUtilities');
-
-exports["default"] = function () {
-	if (typeof arguments[0].ampSpectrum !== "object") {
-		throw new TypeError();
-	}
-	return (0, _extractorUtilities.mu)(1, arguments[0].ampSpectrum);
-};
-
-module.exports = exports["default"];
-
-},{"./extractorUtilities":12}],20:[function(require,module,exports){
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-	value: true
-});
-
-exports["default"] = function () {
-	if (typeof arguments[0].ampSpectrum !== "object") {
-		throw new TypeError();
-	}
-	var numerator = 0;
-	var denominator = 0;
-	for (var i = 0; i < arguments[0].ampSpectrum.length; i++) {
-		numerator += Math.log(arguments[0].ampSpectrum[i]);
-		denominator += arguments[0].ampSpectrum[i];
-	}
-	return Math.exp(numerator / arguments[0].ampSpectrum.length) * arguments[0].ampSpectrum.length / denominator;
-};
-
-module.exports = exports["default"];
-
-},{}],21:[function(require,module,exports){
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-	value: true
-});
-
-var _extractorUtilities = require('./extractorUtilities');
-
-exports["default"] = function () {
-	if (typeof arguments[0].ampSpectrum !== "object") {
-		throw new TypeError();
-	}
-	var ampspec = arguments[0].ampSpectrum;
-	var mu1 = (0, _extractorUtilities.mu)(1, ampspec);
-	var mu2 = (0, _extractorUtilities.mu)(2, ampspec);
-	var mu3 = (0, _extractorUtilities.mu)(3, ampspec);
-	var mu4 = (0, _extractorUtilities.mu)(4, ampspec);
-	var numerator = -3 * Math.pow(mu1, 4) + 6 * mu1 * mu2 - 4 * mu1 * mu3 + mu4;
-	var denominator = Math.pow(Math.sqrt(mu2 - Math.pow(mu1, 2)), 4);
-	return numerator / denominator;
-};
-
-module.exports = exports["default"];
-
-},{"./extractorUtilities":12}],22:[function(require,module,exports){
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-	value: true
-});
-
-exports["default"] = function () {
-	if (typeof arguments[0].ampSpectrum !== "object") {
-		throw new TypeError();
-	}
-	var ampspec = arguments[0].ampSpectrum;
-	//calculate nyquist bin
-	var nyqBin = arguments[0].sampleRate / (2 * (ampspec.length - 1));
-	var ec = 0;
-	for (var i = 0; i < ampspec.length; i++) {
-		ec += ampspec[i];
-	}
-	var threshold = 0.99 * ec;
-	var n = ampspec.length - 1;
-	while (ec > threshold && n >= 0) {
-		ec -= ampspec[n];
-		--n;
-	}
-	return (n + 1) * nyqBin;
-};
-
-module.exports = exports["default"];
-
-},{}],23:[function(require,module,exports){
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-	value: true
-});
-
-var _extractorUtilities = require('./extractorUtilities');
-
-exports["default"] = function (args) {
-	if (typeof args.ampSpectrum !== "object") {
-		throw new TypeError();
-	}
-	var mu1 = (0, _extractorUtilities.mu)(1, args.ampSpectrum);
-	var mu2 = (0, _extractorUtilities.mu)(2, args.ampSpectrum);
-	var mu3 = (0, _extractorUtilities.mu)(3, args.ampSpectrum);
-	var numerator = 2 * Math.pow(mu1, 3) - 3 * mu1 * mu2 + mu3;
-	var denominator = Math.pow(Math.sqrt(mu2 - Math.pow(mu1, 2)), 3);
-	return numerator / denominator;
-};
-
-module.exports = exports["default"];
-
-},{"./extractorUtilities":12}],24:[function(require,module,exports){
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-
-exports["default"] = function (args) {
-  if (typeof args.ampSpectrum !== "object") {
-    throw new TypeError();
-  }
-
-  //linear regression
-  var ampSum = 0;
-  var freqSum = 0;
-  var freqs = new Float32Array(args.ampSpectrum.length);
-  var powFreqSum = 0;
-  var ampFreqSum = 0;
-
-  for (var i = 0; i < args.ampSpectrum.length; i++) {
-    ampSum += args.ampSpectrum[i];
-    var curFreq = i * args.sampleRate / args.bufferSize;
-    freqs[i] = curFreq;
-    powFreqSum += curFreq * curFreq;
-    freqSum += curFreq;
-    ampFreqSum += curFreq * args.ampSpectrum[i];
-  }
-  return (args.ampSpectrum.length * ampFreqSum - freqSum * ampSum) / (ampSum * (powFreqSum - Math.pow(freqSum, 2)));
-};
-
-module.exports = exports["default"];
-
-},{}],25:[function(require,module,exports){
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-	value: true
-});
-
-var _extractorUtilities = require('./extractorUtilities');
-
-exports["default"] = function (args) {
-	if (typeof args.ampSpectrum !== "object") {
-		throw new TypeError();
-	}
-	return Math.sqrt((0, _extractorUtilities.mu)(2, args.ampSpectrum) - Math.pow((0, _extractorUtilities.mu)(1, args.ampSpectrum), 2));
-};
-
-module.exports = exports["default"];
-
-},{"./extractorUtilities":12}],26:[function(require,module,exports){
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-	value: true
-});
-
-exports["default"] = function () {
-	if (typeof arguments[0].signal !== "object") {
-		throw new TypeError();
-	}
-	var zcr = 0;
-	for (var i = 0; i < arguments[0].signal.length; i++) {
-		if (arguments[0].signal[i] >= 0 && arguments[0].signal[i + 1] < 0 || arguments[0].signal[i] < 0 && arguments[0].signal[i + 1] >= 0) {
-			zcr++;
-		}
-	}
-	return zcr;
-};
-
-module.exports = exports["default"];
-
-},{}],27:[function(require,module,exports){
-'use strict';
-
-Object.defineProperty(exports, '__esModule', {
-  value: true
-});
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-var _extractorsRms = require('./extractors/rms');
-
-var _extractorsRms2 = _interopRequireDefault(_extractorsRms);
-
-var _extractorsEnergy = require('./extractors/energy');
-
-var _extractorsEnergy2 = _interopRequireDefault(_extractorsEnergy);
-
-var _extractorsSpectralSlope = require('./extractors/spectralSlope');
-
-var _extractorsSpectralSlope2 = _interopRequireDefault(_extractorsSpectralSlope);
-
-var _extractorsSpectralCentroid = require('./extractors/spectralCentroid');
-
-var _extractorsSpectralCentroid2 = _interopRequireDefault(_extractorsSpectralCentroid);
-
-var _extractorsSpectralRolloff = require('./extractors/spectralRolloff');
-
-var _extractorsSpectralRolloff2 = _interopRequireDefault(_extractorsSpectralRolloff);
-
-var _extractorsSpectralFlatness = require('./extractors/spectralFlatness');
-
-var _extractorsSpectralFlatness2 = _interopRequireDefault(_extractorsSpectralFlatness);
-
-var _extractorsSpectralSpread = require('./extractors/spectralSpread');
-
-var _extractorsSpectralSpread2 = _interopRequireDefault(_extractorsSpectralSpread);
-
-var _extractorsSpectralSkewness = require('./extractors/spectralSkewness');
-
-var _extractorsSpectralSkewness2 = _interopRequireDefault(_extractorsSpectralSkewness);
-
-var _extractorsSpectralKurtosis = require('./extractors/spectralKurtosis');
-
-var _extractorsSpectralKurtosis2 = _interopRequireDefault(_extractorsSpectralKurtosis);
-
-var _extractorsZcr = require('./extractors/zcr');
-
-var _extractorsZcr2 = _interopRequireDefault(_extractorsZcr);
-
-var _extractorsLoudness = require('./extractors/loudness');
-
-var _extractorsLoudness2 = _interopRequireDefault(_extractorsLoudness);
-
-var _extractorsPerceptualSpread = require('./extractors/perceptualSpread');
-
-var _extractorsPerceptualSpread2 = _interopRequireDefault(_extractorsPerceptualSpread);
-
-var _extractorsPerceptualSharpness = require('./extractors/perceptualSharpness');
-
-var _extractorsPerceptualSharpness2 = _interopRequireDefault(_extractorsPerceptualSharpness);
-
-var _extractorsMfcc = require('./extractors/mfcc');
-
-var _extractorsMfcc2 = _interopRequireDefault(_extractorsMfcc);
-
-var _extractorsPowerSpectrum = require('./extractors/powerSpectrum');
-
-var _extractorsPowerSpectrum2 = _interopRequireDefault(_extractorsPowerSpectrum);
-
-exports['default'] = {
-  "buffer": function buffer(args) {
-    return args.signal;
-  },
-  rms: _extractorsRms2['default'],
-  energy: _extractorsEnergy2['default'],
-  "complexSpectrum": function complexSpectrum(args) {
-    return args.complexSpectrum;
-  },
-  spectralSlope: _extractorsSpectralSlope2['default'],
-  spectralCentroid: _extractorsSpectralCentroid2['default'],
-  spectralRolloff: _extractorsSpectralRolloff2['default'],
-  spectralFlatness: _extractorsSpectralFlatness2['default'],
-  spectralSpread: _extractorsSpectralSpread2['default'],
-  spectralSkewness: _extractorsSpectralSkewness2['default'],
-  spectralKurtosis: _extractorsSpectralKurtosis2['default'],
-  "amplitudeSpectrum": function amplitudeSpectrum(args) {
-    return args.ampSpectrum;
-  },
-  zcr: _extractorsZcr2['default'],
-  loudness: _extractorsLoudness2['default'],
-  perceptualSpread: _extractorsPerceptualSpread2['default'],
-  perceptualSharpness: _extractorsPerceptualSharpness2['default'],
-  powerSpectrum: _extractorsPowerSpectrum2['default'],
-  mfcc: _extractorsMfcc2['default']
-};
-module.exports = exports['default'];
-
-},{"./extractors/energy":11,"./extractors/loudness":13,"./extractors/mfcc":14,"./extractors/perceptualSharpness":15,"./extractors/perceptualSpread":16,"./extractors/powerSpectrum":17,"./extractors/rms":18,"./extractors/spectralCentroid":19,"./extractors/spectralFlatness":20,"./extractors/spectralKurtosis":21,"./extractors/spectralRolloff":22,"./extractors/spectralSkewness":23,"./extractors/spectralSlope":24,"./extractors/spectralSpread":25,"./extractors/zcr":26}],28:[function(require,module,exports){
-'use strict';
-
-Object.defineProperty(exports, '__esModule', {
-	value: true
-});
-
-var _createClass = (function () { function defineProperties(target, props) { for (var i = 0; i < props.length; i++) { var descriptor = props[i]; descriptor.enumerable = descriptor.enumerable || false; descriptor.configurable = true; if ('value' in descriptor) descriptor.writable = true; Object.defineProperty(target, descriptor.key, descriptor); } } return function (Constructor, protoProps, staticProps) { if (protoProps) defineProperties(Constructor.prototype, protoProps); if (staticProps) defineProperties(Constructor, staticProps); return Constructor; }; })();
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } else { var newObj = {}; if (obj != null) { for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) newObj[key] = obj[key]; } } newObj['default'] = obj; return newObj; } }
-
-function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError('Cannot call a class as a function'); } }
-
-var _utilities = require('./utilities');
-
-var utilities = _interopRequireWildcard(_utilities);
-
-var _featureExtractors = require('./featureExtractors');
-
-var _featureExtractors2 = _interopRequireDefault(_featureExtractors);
-
-var _jsfft = require('jsfft');
-
-var fft = _interopRequireWildcard(_jsfft);
-
-var _jsfftLibComplex_array = require('jsfft/lib/complex_array');
-
-var complex_array = _interopRequireWildcard(_jsfftLibComplex_array);
-
-var Meyda = (function () {
-	function Meyda(options) {
-		_classCallCheck(this, Meyda);
-
-		var self = this;
-		self.audioContext = options.audioContext;
-
-		//create nodes
-		self.spn = self.audioContext.createScriptProcessor(self.bufferSize, 1, 1);
-		self.spn.connect(self.audioContext.destination);
-
-		// TODO: validate options
-		self.setSource(options.source);
-		self.bufferSize = options.bufferSize || 256;
-		self.callback = options.callback;
-		self.windowingFunction = options.windowingFunction || "hanning";
-		self.featureExtractors = _featureExtractors2['default'];
-		self.EXTRACTION_STARTED = options.startImmediately || false;
-
-		//callback controllers
-		self._featuresToExtract = options.featureExtractors || [];
-
-		self.barkScale = new Float32Array(self.bufferSize);
-
-		for (var i = 0; i < self.barkScale.length; i++) {
-			self.barkScale[i] = i * self.audioContext.sampleRate / self.bufferSize;
-			self.barkScale[i] = 13 * Math.atan(self.barkScale[i] / 1315.8) + 3.5 * Math.atan(Math.pow(self.barkScale[i] / 7518, 2));
-		}
-
-		self.spn.onaudioprocess = function (e) {
-			// self is to obtain the current frame pcm data
-			var inputData = e.inputBuffer.getChannelData(0);
-			self.signal = inputData;
-			var windowedSignal = utilities.applyWindow(inputData, self.windowingFunction);
-
-			// create complexarray to hold the spectrum
-			var data = new complex_array.ComplexArray(self.bufferSize);
-			// map time domain
-			data.map(function (value, i, n) {
-				value.real = windowedSignal[i];
-			});
-			// transform
-			var spec = data.FFT();
-			// assign to meyda
-			self.complexSpectrum = spec;
-			self.ampSpectrum = new Float32Array(self.bufferSize / 2);
-			for (var i = 0; i < self.bufferSize / 2; i++) {
-				self.ampSpectrum[i] = Math.sqrt(Math.pow(spec.real[i], 2) + Math.pow(spec.imag[i], 2));
-			}
-			// call callback if applicable
-			if (typeof self.callback === "function" && self.EXTRACTION_STARTED) {
-				self.callback(self.get(self._featuresToExtract));
-			}
-		};
-	}
-
-	_createClass(Meyda, [{
-		key: 'start',
-		value: function start(features) {
-			self._featuresToExtract = features;
-			self.EXTRACTION_STARTED = true;
-		}
-	}, {
-		key: 'stop',
-		value: function stop() {
-			self.EXTRACTION_STARTED = false;
-		}
-	}, {
-		key: 'setSource',
-		value: function setSource(source) {
-			source.connect(this.spn);
-		}
-	}, {
-		key: 'get',
-		value: function get(feature) {
-			var self = this;
-			if (typeof feature === "object") {
-				var results = {};
-				for (var x = 0; x < feature.length; x++) {
-					results[feature[x]] = _featureExtractors2['default'][feature[x]]({
-						ampSpectrum: self.ampSpectrum,
-						complexSpectrum: self.complexSpectrum,
-						signal: self.signal,
-						bufferSize: self.bufferSize,
-						sampleRate: self.audioContext.sampleRate,
-						barkScale: self.barkScale
-					});
-				}
-				return results;
-			} else if (typeof feature === "string") {
-				return _featureExtractors2['default'][feature]({
-					ampSpectrum: self.ampSpectrum,
-					complexSpectrum: self.complexSpectrum,
-					signal: self.signal,
-					bufferSize: self.bufferSize,
-					sampleRate: self.audioContext.sampleRate,
-					barkScale: self.barkScale
-				});
-			} else {
-				throw "Invalid Feature Format";
-			}
-		}
-	}]);
-
-	return Meyda;
-})();
-
-exports['default'] = Meyda;
-
-if (typeof window !== "undefined") window.Meyda = Meyda;
-module.exports = exports['default'];
-
-},{"./featureExtractors":27,"./utilities":29,"jsfft":10,"jsfft/lib/complex_array":9}],29:[function(require,module,exports){
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-exports.isPowerOfTwo = isPowerOfTwo;
-exports.error = error;
-exports.pointwiseBufferMult = pointwiseBufferMult;
-exports.applyWindow = applyWindow;
-
-function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } else { var newObj = {}; if (obj != null) { for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) newObj[key] = obj[key]; } } newObj["default"] = obj; return newObj; } }
-
-var _windowing = require('./windowing');
-
-var windowing = _interopRequireWildcard(_windowing);
-
-var windows = {};
-
-function isPowerOfTwo(num) {
-  while (num % 2 === 0 && num > 1) {
-    num /= 2;
-  }
-  return num === 1;
-}
-
-function error(message) {
-  throw new Error("Meyda: " + message);
-}
-
-function pointwiseBufferMult(a, b) {
-  var c = [];
-  for (var i = 0; i < Math.min(a.length, b.length); i++) {
-    c[i] = a[i] * b[i];
-  }
-  return c;
-}
-
-function applyWindow(signal, windowname) {
-  if (!windows[windowname]) windows[windowname] = {};
-  if (!windows[windowname][signal.length]) windows[windowname][signal.length] = windowing.hanning(signal.length);
-
-  return pointwiseBufferMult(signal, windows[windowname][signal.length]);
-}
-
-},{"./windowing":30}],30:[function(require,module,exports){
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-exports.hanning = hanning;
-exports.hamming = hamming;
-var generateBlackman = function generateBlackman(size) {
-  var blackman = new Float32Array(size);
-  //According to http://uk.mathworks.com/help/signal/ref/blackman.html
-  //first half of the window
-  for (var i = 0; i < size % 2 ? (size + 1) / 2 : size / 2; i++) {
-    blackman[i] = 0.42 - 0.5 * Math.cos(2 * Math.PI * i / (size - 1)) + 0.08 * Math.cos(4 * Math.PI * i / (size - 1));
-  }
-  //second half of the window
-  for (var i = size / 2; i > 0; i--) {
-    blackman[size - i] = blackman[i];
-  }
-};
-
-// @TODO: finish and export Blackman
-
-function hanning(size) {
-  var hanningBuffer = new Float32Array(size);
-  for (var i = 0; i < size; i++) {
-    //According to the R documentation http://rgm.ogalab.net/RGM/R_rdfile?f=GENEAread/man/hanning.window.Rd&d=R_CC
-    hanningBuffer[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (size - 1));
-  }
-  return hanningBuffer;
-}
-
-function hamming(size) {
-  var hammingBuffer = new Float32Array(size);
-  for (var i = 0; i < size; i++) {
-    //According to http://uk.mathworks.com/help/signal/ref/hamming.html
-    hammingBuffer[i] = 0.54 - 0.46 * Math.cos(2 * Math.PI * (i / size - 1));
-  }
-  return hammingBuffer;
-}
-
-},{}]},{},[7]);
+    }, m.inherits(d.AssertionError, Error), d.fail = i, d.ok = u, d.equal = function (t, e, r) {
+      t != e && i(t, e, r, "==", d.equal);
+    }, d.notEqual = function (t, e, r) {
+      t == e && i(t, e, r, "!=", d.notEqual);
+    }, d.deepEqual = function (t, e, r) {
+      s(t, e) || i(t, e, r, "deepEqual", d.deepEqual);
+    }, d.notDeepEqual = function (t, e, r) {
+      s(t, e) && i(t, e, r, "notDeepEqual", d.notDeepEqual);
+    }, d.strictEqual = function (t, e, r) {
+      t !== e && i(t, e, r, "===", d.strictEqual);
+    }, d.notStrictEqual = function (t, e, r) {
+      t === e && i(t, e, r, "!==", d.notStrictEqual);
+    }, d["throws"] = function (t, e, r) {
+      p.apply(this, [!0].concat(y.call(arguments)));
+    }, d.doesNotThrow = function (t, e) {
+      p.apply(this, [!1].concat(y.call(arguments)));
+    }, d.ifError = function (t) {
+      if (t) throw t;
+    };var g = Object.keys || function (t) {
+      var e = [];for (var r in t) h.call(t, r) && e.push(r);return e;
+    };
+  }, { "util/": 9 }], 2: [function (t, e, r) {
+    e.exports = t("./src/dct.js");
+  }, { "./src/dct.js": 3 }], 3: [function (t, e, r) {
+    function n(t, e) {
+      var r = t.length;e = e || 2, cosMap && cosMap[r] || o(r);var n = t.map(function () {
+        return 0;
+      });return n.map(function (n, o) {
+        return e * t.reduce(function (t, e, n, a) {
+          return t + e * cosMap[r][n + o * r];
+        }, 0);
+      });
+    }cosMap = null;var o = function o(t) {
+      cosMap = cosMap || {}, cosMap[t] = new Array(t * t);for (var e = Math.PI / t, r = 0; t > r; r++) for (var n = 0; t > n; n++) cosMap[t][n + r * t] = Math.cos(e * (n + .5) * r);
+    };e.exports = n;
+  }, {}], 4: [function (t, e, r) {
+    "function" == typeof Object.create ? e.exports = function (t, e) {
+      t.super_ = e, t.prototype = Object.create(e.prototype, { constructor: { value: t, enumerable: !1, writable: !0, configurable: !0 } });
+    } : e.exports = function (t, e) {
+      t.super_ = e;var r = function r() {};r.prototype = e.prototype, t.prototype = new r(), t.prototype.constructor = t;
+    };
+  }, {}], 5: [function (t, e, r) {
+    "use strict";!(function (t, e) {
+      function r(t) {
+        return (t.forEach || (t.forEach = function (t) {
+          var e,
+              r = this.length;for (e = 0; r > e; e++) t(this[e], e, r);
+        }), t);
+      }var n,
+          o,
+          a = Float32Array,
+          i = Math.sqrt,
+          u = function u(t) {
+        return Math.pow(t, 2);
+      };t.isComplexArray = n = function (t) {
+        return t !== e && t.hasOwnProperty !== e && t.hasOwnProperty("real") && t.hasOwnProperty("imag");
+      }, t.ComplexArray = o = function (t, e) {
+        n(t) ? (this.ArrayType = t.ArrayType, this.real = new this.ArrayType(t.real), this.imag = new this.ArrayType(t.imag)) : (this.ArrayType = e || a, this.real = new this.ArrayType(t), this.imag = new this.ArrayType(this.real.length)), this.length = this.real.length;
+      }, o.prototype.toString = function () {
+        var t = [];return (this.forEach(function (e, r) {
+          t.push("(" + e.real.toFixed(2) + "," + e.imag.toFixed(2) + ")");
+        }), "[" + t.join(",") + "]");
+      }, o.prototype.map = function (t) {
+        var e,
+            r = this.length,
+            n = {};for (e = 0; r > e; e++) n.real = this.real[e], n.imag = this.imag[e], t(n, e, r), this.real[e] = n.real, this.imag[e] = n.imag;return this;
+      }, o.prototype.forEach = function (t) {
+        var e,
+            r = this.length,
+            n = {};for (e = 0; r > e; e++) n.real = this.real[e], n.imag = this.imag[e], t(n, e, r);
+      }, o.prototype.conjugate = function () {
+        return new o(this).map(function (t) {
+          t.imag *= -1;
+        });
+      }, o.prototype.magnitude = function () {
+        var t = new this.ArrayType(this.length);return (this.forEach(function (e, r) {
+          t[r] = i(u(e.real) + u(e.imag));
+        }), r(t));
+      };
+    })("undefined" == typeof r && (this.complex_array = {}) || r);
+  }, {}], 6: [function (t, e, r) {
+    "use strict";!(function (t, e) {
+      function r(t) {
+        return e.isComplexArray(t) && t || new c(t);
+      }function n(t, e) {
+        var r = t.length;return r & r - 1 ? o(t, e) : a(t, e);
+      }function o(t, e) {
+        var r,
+            o,
+            a,
+            i,
+            u,
+            l,
+            h,
+            d,
+            g,
+            b,
+            S,
+            v,
+            w,
+            x,
+            _ = t.length;if (1 === _) return t;for (a = new c(_, t.ArrayType), d = s(_), g = _ / d, b = 1 / p(d), S = new c(g, t.ArrayType), o = 0; d > o; o++) {
+          for (r = 0; g > r; r++) S.real[r] = t.real[r * d + o], S.imag[r] = t.imag[r * d + o];for (g > 1 && (S = n(S, e)), l = m(2 * f * o / _), h = (e ? -1 : 1) * y(2 * f * o / _), i = 1, u = 0, r = 0; _ > r; r++) w = S.real[r % g], x = S.imag[r % g], a.real[r] += i * w - u * x, a.imag[r] += i * x + u * w, v = i * l - u * h, u = i * h + u * l, i = v;
+        }for (r = 0; _ > r; r++) t.real[r] = b * a.real[r], t.imag[r] = b * a.imag[r];return t;
+      }function a(t, e) {
+        var r,
+            n,
+            o,
+            a,
+            i,
+            s,
+            c,
+            p,
+            h,
+            d,
+            g,
+            b,
+            S,
+            v,
+            w,
+            x,
+            _,
+            M = t.length;for (o = u(t), a = o.real, i = o.imag, _ = 1; M > _;) {
+          for (p = m(f / _), h = (e ? -1 : 1) * y(f / _), r = 0; M / (2 * _) > r; r++) for (s = 1, c = 0, n = 0; _ > n; n++) g = 2 * r * _ + n, b = g + _, S = a[g], v = i[g], w = s * a[b] - c * i[b], x = c * a[b] + s * i[b], a[g] = l * (S + w), i[g] = l * (v + x), a[b] = l * (S - w), i[b] = l * (v - x), d = s * p - c * h, c = s * h + c * p, s = d;_ <<= 1;
+        }return o;
+      }function i(t, e) {
+        for (var r = 0; e > 1;) r <<= 1, r += 1 & t, t >>= 1, e >>= 1;return r;
+      }function u(t) {
+        var e,
+            r,
+            n = t.length,
+            o = {};for (r = 0; n > r; r++) {
+          var a = i(r, n);o.hasOwnProperty(r) || o.hasOwnProperty(a) || (e = t.real[a], t.real[a] = t.real[r], t.real[r] = e, e = t.imag[a], t.imag[a] = t.imag[r], t.imag[r] = e, o[r] = o[a] = !0);
+        }return t;
+      }function s(t) {
+        for (var e = 3, r = p(t); r >= e;) {
+          if (t % e === 0) return e;e += 2;
+        }return t;
+      }var c = e.ComplexArray,
+          f = Math.PI,
+          l = Math.SQRT1_2,
+          p = Math.sqrt,
+          m = Math.cos,
+          y = Math.sin;c.prototype.FFT = function () {
+        return n(this, !1);
+      }, t.FFT = function (t) {
+        return r(t).FFT();
+      }, c.prototype.InvFFT = function () {
+        return n(this, !0);
+      }, t.InvFFT = function (t) {
+        return r(t).InvFFT();
+      }, c.prototype.frequencyMap = function (t) {
+        return this.FFT().map(t).InvFFT();
+      }, t.frequencyMap = function (t, e) {
+        return r(t).frequencyMap(e);
+      };
+    })("undefined" == typeof r && (this.fft = {}) || r, "undefined" == typeof t && this.complex_array || t("./complex_array"));
+  }, { "./complex_array": 5 }], 7: [function (t, e, r) {
+    function n() {
+      f = !1, u.length ? c = u.concat(c) : l = -1, c.length && o();
+    }function o() {
+      if (!f) {
+        var t = setTimeout(n);f = !0;for (var e = c.length; e;) {
+          for (u = c, c = []; ++l < e;) u && u[l].run();l = -1, e = c.length;
+        }u = null, f = !1, clearTimeout(t);
+      }
+    }function a(t, e) {
+      this.fun = t, this.array = e;
+    }function i() {}var u,
+        s = e.exports = {},
+        c = [],
+        f = !1,
+        l = -1;s.nextTick = function (t) {
+      var e = new Array(arguments.length - 1);if (arguments.length > 1) for (var r = 1; r < arguments.length; r++) e[r - 1] = arguments[r];c.push(new a(t, e)), 1 !== c.length || f || setTimeout(o, 0);
+    }, a.prototype.run = function () {
+      this.fun.apply(null, this.array);
+    }, s.title = "browser", s.browser = !0, s.env = {}, s.argv = [], s.version = "", s.versions = {}, s.on = i, s.addListener = i, s.once = i, s.off = i, s.removeListener = i, s.removeAllListeners = i, s.emit = i, s.binding = function (t) {
+      throw new Error("process.binding is not supported");
+    }, s.cwd = function () {
+      return "/";
+    }, s.chdir = function (t) {
+      throw new Error("process.chdir is not supported");
+    }, s.umask = function () {
+      return 0;
+    };
+  }, {}], 8: [function (t, e, r) {
+    e.exports = function (t) {
+      return t && "object" == typeof t && "function" == typeof t.copy && "function" == typeof t.fill && "function" == typeof t.readUInt8;
+    };
+  }, {}], 9: [function (t, e, r) {
+    (function (e, n) {
+      function o(t, e) {
+        var n = { seen: [], stylize: i };return (arguments.length >= 3 && (n.depth = arguments[2]), arguments.length >= 4 && (n.colors = arguments[3]), h(e) ? n.showHidden = e : e && r._extend(n, e), w(n.showHidden) && (n.showHidden = !1), w(n.depth) && (n.depth = 2), w(n.colors) && (n.colors = !1), w(n.customInspect) && (n.customInspect = !0), n.colors && (n.stylize = a), s(n, t, n.depth));
+      }function a(t, e) {
+        var r = o.styles[e];return r ? "[" + o.colors[r][0] + "m" + t + "[" + o.colors[r][1] + "m" : t;
+      }function i(t, e) {
+        return t;
+      }function u(t) {
+        var e = {};return (t.forEach(function (t, r) {
+          e[t] = !0;
+        }), e);
+      }function s(t, e, n) {
+        if (t.customInspect && e && j(e.inspect) && e.inspect !== r.inspect && (!e.constructor || e.constructor.prototype !== e)) {
+          var o = e.inspect(n, t);return (S(o) || (o = s(t, o, n)), o);
+        }var a = c(t, e);if (a) return a;var i = Object.keys(e),
+            h = u(i);if ((t.showHidden && (i = Object.getOwnPropertyNames(e)), E(e) && (i.indexOf("message") >= 0 || i.indexOf("description") >= 0))) return f(e);if (0 === i.length) {
+          if (j(e)) {
+            var d = e.name ? ": " + e.name : "";return t.stylize("[Function" + d + "]", "special");
+          }if (x(e)) return t.stylize(RegExp.prototype.toString.call(e), "regexp");if (M(e)) return t.stylize(Date.prototype.toString.call(e), "date");if (E(e)) return f(e);
+        }var g = "",
+            b = !1,
+            v = ["{", "}"];if ((y(e) && (b = !0, v = ["[", "]"]), j(e))) {
+          var w = e.name ? ": " + e.name : "";g = " [Function" + w + "]";
+        }if ((x(e) && (g = " " + RegExp.prototype.toString.call(e)), M(e) && (g = " " + Date.prototype.toUTCString.call(e)), E(e) && (g = " " + f(e)), 0 === i.length && (!b || 0 == e.length))) return v[0] + g + v[1];if (0 > n) return x(e) ? t.stylize(RegExp.prototype.toString.call(e), "regexp") : t.stylize("[Object]", "special");t.seen.push(e);var _;return (_ = b ? l(t, e, n, h, i) : i.map(function (r) {
+          return p(t, e, n, h, r, b);
+        }), t.seen.pop(), m(_, g, v));
+      }function c(t, e) {
+        if (w(e)) return t.stylize("undefined", "undefined");if (S(e)) {
+          var r = "'" + JSON.stringify(e).replace(/^"|"$/g, "").replace(/'/g, "\\'").replace(/\\"/g, '"') + "'";return t.stylize(r, "string");
+        }return b(e) ? t.stylize("" + e, "number") : h(e) ? t.stylize("" + e, "boolean") : d(e) ? t.stylize("null", "null") : void 0;
+      }function f(t) {
+        return "[" + Error.prototype.toString.call(t) + "]";
+      }function l(t, e, r, n, o) {
+        for (var a = [], i = 0, u = e.length; u > i; ++i) k(e, String(i)) ? a.push(p(t, e, r, n, String(i), !0)) : a.push("");return (o.forEach(function (o) {
+          o.match(/^\d+$/) || a.push(p(t, e, r, n, o, !0));
+        }), a);
+      }function p(t, e, r, n, o, a) {
+        var i, u, c;if ((c = Object.getOwnPropertyDescriptor(e, o) || { value: e[o] }, c.get ? u = c.set ? t.stylize("[Getter/Setter]", "special") : t.stylize("[Getter]", "special") : c.set && (u = t.stylize("[Setter]", "special")), k(n, o) || (i = "[" + o + "]"), u || (t.seen.indexOf(c.value) < 0 ? (u = d(r) ? s(t, c.value, null) : s(t, c.value, r - 1), u.indexOf("\n") > -1 && (u = a ? u.split("\n").map(function (t) {
+          return "  " + t;
+        }).join("\n").substr(2) : "\n" + u.split("\n").map(function (t) {
+          return "   " + t;
+        }).join("\n"))) : u = t.stylize("[Circular]", "special")), w(i))) {
+          if (a && o.match(/^\d+$/)) return u;i = JSON.stringify("" + o), i.match(/^"([a-zA-Z_][a-zA-Z_0-9]*)"$/) ? (i = i.substr(1, i.length - 2), i = t.stylize(i, "name")) : (i = i.replace(/'/g, "\\'").replace(/\\"/g, '"').replace(/(^"|"$)/g, "'"), i = t.stylize(i, "string"));
+        }return i + ": " + u;
+      }function m(t, e, r) {
+        var n = 0,
+            o = t.reduce(function (t, e) {
+          return (n++, e.indexOf("\n") >= 0 && n++, t + e.replace(/\u001b\[\d\d?m/g, "").length + 1);
+        }, 0);return o > 60 ? r[0] + ("" === e ? "" : e + "\n ") + " " + t.join(",\n  ") + " " + r[1] : r[0] + e + " " + t.join(", ") + " " + r[1];
+      }function y(t) {
+        return Array.isArray(t);
+      }function h(t) {
+        return "boolean" == typeof t;
+      }function d(t) {
+        return null === t;
+      }function g(t) {
+        return null == t;
+      }function b(t) {
+        return "number" == typeof t;
+      }function S(t) {
+        return "string" == typeof t;
+      }function v(t) {
+        return "symbol" == typeof t;
+      }function w(t) {
+        return void 0 === t;
+      }function x(t) {
+        return _(t) && "[object RegExp]" === T(t);
+      }function _(t) {
+        return "object" == typeof t && null !== t;
+      }function M(t) {
+        return _(t) && "[object Date]" === T(t);
+      }function E(t) {
+        return _(t) && ("[object Error]" === T(t) || t instanceof Error);
+      }function j(t) {
+        return "function" == typeof t;
+      }function O(t) {
+        return null === t || "boolean" == typeof t || "number" == typeof t || "string" == typeof t || "symbol" == typeof t || "undefined" == typeof t;
+      }function T(t) {
+        return Object.prototype.toString.call(t);
+      }function A(t) {
+        return 10 > t ? "0" + t.toString(10) : t.toString(10);
+      }function F() {
+        var t = new Date(),
+            e = [A(t.getHours()), A(t.getMinutes()), A(t.getSeconds())].join(":");return [t.getDate(), C[t.getMonth()], e].join(" ");
+      }function k(t, e) {
+        return Object.prototype.hasOwnProperty.call(t, e);
+      }var z = /%[sdj%]/g;r.format = function (t) {
+        if (!S(t)) {
+          for (var e = [], r = 0; r < arguments.length; r++) e.push(o(arguments[r]));return e.join(" ");
+        }for (var r = 1, n = arguments, a = n.length, i = String(t).replace(z, function (t) {
+          if ("%%" === t) return "%";if (r >= a) return t;switch (t) {case "%s":
+              return String(n[r++]);case "%d":
+              return Number(n[r++]);case "%j":
+              try {
+                return JSON.stringify(n[r++]);
+              } catch (e) {
+                return "[Circular]";
+              }default:
+              return t;}
+        }), u = n[r]; a > r; u = n[++r]) i += d(u) || !_(u) ? " " + u : " " + o(u);return i;
+      }, r.deprecate = function (t, o) {
+        function a() {
+          if (!i) {
+            if (e.throwDeprecation) throw new Error(o);e.traceDeprecation ? console.trace(o) : console.error(o), i = !0;
+          }return t.apply(this, arguments);
+        }if (w(n.process)) return function () {
+          return r.deprecate(t, o).apply(this, arguments);
+        };if (e.noDeprecation === !0) return t;var i = !1;return a;
+      };var P,
+          R = {};r.debuglog = function (t) {
+        if ((w(P) && (P = e.env.NODE_DEBUG || ""), t = t.toUpperCase(), !R[t])) if (new RegExp("\\b" + t + "\\b", "i").test(P)) {
+          var n = e.pid;R[t] = function () {
+            var e = r.format.apply(r, arguments);console.error("%s %d: %s", t, n, e);
+          };
+        } else R[t] = function () {};return R[t];
+      }, r.inspect = o, o.colors = { bold: [1, 22], italic: [3, 23], underline: [4, 24], inverse: [7, 27], white: [37, 39], grey: [90, 39], black: [30, 39], blue: [34, 39], cyan: [36, 39], green: [32, 39], magenta: [35, 39], red: [31, 39], yellow: [33, 39] }, o.styles = { special: "cyan", number: "yellow", "boolean": "yellow", undefined: "grey", "null": "bold", string: "green", date: "magenta", regexp: "red" }, r.isArray = y, r.isBoolean = h, r.isNull = d, r.isNullOrUndefined = g, r.isNumber = b, r.isString = S, r.isSymbol = v, r.isUndefined = w, r.isRegExp = x, r.isObject = _, r.isDate = M, r.isError = E, r.isFunction = j, r.isPrimitive = O, r.isBuffer = t("./support/isBuffer");var C = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];r.log = function () {
+        console.log("%s - %s", F(), r.format.apply(r, arguments));
+      }, r.inherits = t("inherits"), r._extend = function (t, e) {
+        if (!e || !_(e)) return t;for (var r = Object.keys(e), n = r.length; n--;) t[r[n]] = e[r[n]];return t;
+      };
+    }).call(this, t("_process"), "undefined" != typeof global ? global : "undefined" != typeof self ? self : "undefined" != typeof window ? window : {});
+  }, { "./support/isBuffer": 8, _process: 7, inherits: 4 }], 10: [function (t, e, r) {
+    "use strict";function n(t) {
+      if (t && t.__esModule) return t;var e = {};if (null != t) for (var r in t) Object.prototype.hasOwnProperty.call(t, r) && (e[r] = t[r]);return (e["default"] = t, e);
+    }Object.defineProperty(r, "__esModule", { value: !0 });var o = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (t) {
+      return typeof t;
+    } : function (t) {
+      return t && "function" == typeof Symbol && t.constructor === Symbol ? "symbol" : typeof t;
+    };r["default"] = function () {
+      if ("object" !== o(arguments[0].signal)) throw new TypeError();for (var t = 0, e = 0; e < arguments[0].signal.length; e++) t += Math.pow(Math.abs(arguments[0].signal[e]), 2);return t;
+    };var a = t("assert");n(a);e.exports = r["default"];
+  }, { assert: 1 }], 11: [function (t, e, r) {
+    "use strict";function n(t, e) {
+      for (var r = 0, n = 0, o = 0; o < e.length; o++) r += Math.pow(o, t) * Math.abs(e[o]), n += e[o];return r / n;
+    }Object.defineProperty(r, "__esModule", { value: !0 }), r.mu = n;
+  }, {}], 12: [function (t, e, r) {
+    "use strict";Object.defineProperty(r, "__esModule", { value: !0 });var n = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (t) {
+      return typeof t;
+    } : function (t) {
+      return t && "function" == typeof Symbol && t.constructor === Symbol ? "symbol" : typeof t;
+    };r["default"] = function (t) {
+      if ("object" !== n(t.ampSpectrum) || "object" !== n(t.barkScale)) throw new TypeError();var e = 24,
+          r = new Float32Array(e),
+          o = 0,
+          a = t.ampSpectrum,
+          i = new Int32Array(e + 1);i[0] = 0;for (var u = t.barkScale[a.length - 1] / e, s = 1, c = 0; c < a.length; c++) for (; t.barkScale[c] > u;) i[s++] = c, u = s * t.barkScale[a.length - 1] / e;i[e] = a.length - 1;for (var c = 0; e > c; c++) {
+        for (var f = 0, l = i[c]; l < i[c + 1]; l++) f += a[l];r[c] = Math.pow(f, .23);
+      }for (var c = 0; c < r.length; c++) o += r[c];return { specific: r, total: o };
+    }, e.exports = r["default"];
+  }, {}], 13: [function (t, e, r) {
+    "use strict";function n(t) {
+      return t && t.__esModule ? t : { "default": t };
+    }Object.defineProperty(r, "__esModule", { value: !0 });var o = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (t) {
+      return typeof t;
+    } : function (t) {
+      return t && "function" == typeof Symbol && t.constructor === Symbol ? "symbol" : typeof t;
+    };r["default"] = function (t) {
+      if ("object" !== o(t.ampSpectrum) || "object" !== o(t.melFilterBank)) throw new TypeError();for (var e = (0, i["default"])(t), r = t.melFilterBank.length, n = Array(r), a = new Float32Array(r), u = 0; u < a.length; u++) {
+        n[u] = new Float32Array(t.bufferSize / 2), a[u] = 0;for (var c = 0; c < t.bufferSize / 2; c++) n[u][c] = t.melFilterBank[u][c] * e[c], a[u] += n[u][c];a[u] = a[u] > 1e-5 ? Math.log(a[u]) : 0;
+      }var f = Array.prototype.slice.call(a),
+          l = s(f),
+          p = new Float32Array(l);return p;
+    };var a = t("./powerSpectrum"),
+        i = n(a),
+        u = t("./../utilities"),
+        s = (n(u), t("dct"));e.exports = r["default"];
+  }, { "./../utilities": 29, "./powerSpectrum": 16, dct: 2 }], 14: [function (t, e, r) {
+    "use strict";function n(t) {
+      return t && t.__esModule ? t : { "default": t };
+    }Object.defineProperty(r, "__esModule", { value: !0 });var o = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (t) {
+      return typeof t;
+    } : function (t) {
+      return t && "function" == typeof Symbol && t.constructor === Symbol ? "symbol" : typeof t;
+    };r["default"] = function () {
+      if ("object" !== o(arguments[0].signal)) throw new TypeError();for (var t = (0, i["default"])(arguments[0]), e = t.specific, r = 0, n = 0; n < e.length; n++) r += 15 > n ? (n + 1) * e[n + 1] : .066 * Math.exp(.171 * (n + 1));return r *= .11 / t.total;
+    };var a = t("./loudness"),
+        i = n(a);e.exports = r["default"];
+  }, { "./loudness": 12 }], 15: [function (t, e, r) {
+    "use strict";function n(t) {
+      return t && t.__esModule ? t : { "default": t };
+    }Object.defineProperty(r, "__esModule", { value: !0 });var o = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (t) {
+      return typeof t;
+    } : function (t) {
+      return t && "function" == typeof Symbol && t.constructor === Symbol ? "symbol" : typeof t;
+    };r["default"] = function () {
+      if ("object" !== o(arguments[0].signal)) throw new TypeError();for (var t = (0, i["default"])(arguments[0]), e = 0, r = 0; r < t.specific.length; r++) t.specific[r] > e && (e = t.specific[r]);var n = Math.pow((t.total - e) / t.total, 2);return n;
+    };var a = t("./loudness"),
+        i = n(a);e.exports = r["default"];
+  }, { "./loudness": 12 }], 16: [function (t, e, r) {
+    "use strict";Object.defineProperty(r, "__esModule", { value: !0 });var n = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (t) {
+      return typeof t;
+    } : function (t) {
+      return t && "function" == typeof Symbol && t.constructor === Symbol ? "symbol" : typeof t;
+    };r["default"] = function () {
+      if ("object" !== n(arguments[0].ampSpectrum)) throw new TypeError();for (var t = new Float32Array(arguments[0].ampSpectrum.length), e = 0; e < t.length; e++) t[e] = Math.pow(arguments[0].ampSpectrum[e], 2);return t;
+    }, e.exports = r["default"];
+  }, {}], 17: [function (t, e, r) {
+    "use strict";Object.defineProperty(r, "__esModule", { value: !0 });var n = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (t) {
+      return typeof t;
+    } : function (t) {
+      return t && "function" == typeof Symbol && t.constructor === Symbol ? "symbol" : typeof t;
+    };r["default"] = function (t) {
+      if ("object" !== n(t.signal)) throw new TypeError();for (var e = 0, r = 0; r < t.signal.length; r++) e += Math.pow(t.signal[r], 2);return (e /= t.signal.length, e = Math.sqrt(e));
+    }, e.exports = r["default"];
+  }, {}], 18: [function (t, e, r) {
+    "use strict";Object.defineProperty(r, "__esModule", { value: !0 });var n = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (t) {
+      return typeof t;
+    } : function (t) {
+      return t && "function" == typeof Symbol && t.constructor === Symbol ? "symbol" : typeof t;
+    };r["default"] = function () {
+      if ("object" !== n(arguments[0].ampSpectrum)) throw new TypeError();return (0, o.mu)(1, arguments[0].ampSpectrum);
+    };var o = t("./extractorUtilities");e.exports = r["default"];
+  }, { "./extractorUtilities": 11 }], 19: [function (t, e, r) {
+    "use strict";Object.defineProperty(r, "__esModule", { value: !0 });var n = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (t) {
+      return typeof t;
+    } : function (t) {
+      return t && "function" == typeof Symbol && t.constructor === Symbol ? "symbol" : typeof t;
+    };r["default"] = function () {
+      if ("object" !== n(arguments[0].ampSpectrum)) throw new TypeError();for (var t = 0, e = 0, r = 0; r < arguments[0].ampSpectrum.length; r++) t += Math.log(arguments[0].ampSpectrum[r]), e += arguments[0].ampSpectrum[r];return Math.exp(t / arguments[0].ampSpectrum.length) * arguments[0].ampSpectrum.length / e;
+    }, e.exports = r["default"];
+  }, {}], 20: [function (t, e, r) {
+    "use strict";Object.defineProperty(r, "__esModule", { value: !0 });var n = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (t) {
+      return typeof t;
+    } : function (t) {
+      return t && "function" == typeof Symbol && t.constructor === Symbol ? "symbol" : typeof t;
+    };r["default"] = function () {
+      if ("object" !== n(arguments[0].ampSpectrum)) throw new TypeError();var t = arguments[0].ampSpectrum,
+          e = (0, o.mu)(1, t),
+          r = (0, o.mu)(2, t),
+          a = (0, o.mu)(3, t),
+          i = (0, o.mu)(4, t),
+          u = -3 * Math.pow(e, 4) + 6 * e * r - 4 * e * a + i,
+          s = Math.pow(Math.sqrt(r - Math.pow(e, 2)), 4);return u / s;
+    };var o = t("./extractorUtilities");e.exports = r["default"];
+  }, { "./extractorUtilities": 11 }], 21: [function (t, e, r) {
+    "use strict";Object.defineProperty(r, "__esModule", { value: !0 });var n = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (t) {
+      return typeof t;
+    } : function (t) {
+      return t && "function" == typeof Symbol && t.constructor === Symbol ? "symbol" : typeof t;
+    };r["default"] = function () {
+      if ("object" !== n(arguments[0].ampSpectrum)) throw new TypeError();for (var t = arguments[0].ampSpectrum, e = arguments[0].sampleRate / (2 * (t.length - 1)), r = 0, o = 0; o < t.length; o++) r += t[o];for (var a = .99 * r, i = t.length - 1; r > a && i >= 0;) r -= t[i], --i;return (i + 1) * e;
+    }, e.exports = r["default"];
+  }, {}], 22: [function (t, e, r) {
+    "use strict";Object.defineProperty(r, "__esModule", { value: !0 });var n = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (t) {
+      return typeof t;
+    } : function (t) {
+      return t && "function" == typeof Symbol && t.constructor === Symbol ? "symbol" : typeof t;
+    };r["default"] = function (t) {
+      if ("object" !== n(t.ampSpectrum)) throw new TypeError();var e = (0, o.mu)(1, t.ampSpectrum),
+          r = (0, o.mu)(2, t.ampSpectrum),
+          a = (0, o.mu)(3, t.ampSpectrum),
+          i = 2 * Math.pow(e, 3) - 3 * e * r + a,
+          u = Math.pow(Math.sqrt(r - Math.pow(e, 2)), 3);return i / u;
+    };var o = t("./extractorUtilities");e.exports = r["default"];
+  }, { "./extractorUtilities": 11 }], 23: [function (t, e, r) {
+    "use strict";Object.defineProperty(r, "__esModule", { value: !0 });var n = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (t) {
+      return typeof t;
+    } : function (t) {
+      return t && "function" == typeof Symbol && t.constructor === Symbol ? "symbol" : typeof t;
+    };r["default"] = function (t) {
+      if ("object" !== n(t.ampSpectrum)) throw new TypeError();for (var e = 0, r = 0, o = new Float32Array(t.ampSpectrum.length), a = 0, i = 0, u = 0; u < t.ampSpectrum.length; u++) {
+        e += t.ampSpectrum[u];var s = u * t.sampleRate / t.bufferSize;o[u] = s, a += s * s, r += s, i += s * t.ampSpectrum[u];
+      }return (t.ampSpectrum.length * i - r * e) / (e * (a - Math.pow(r, 2)));
+    }, e.exports = r["default"];
+  }, {}], 24: [function (t, e, r) {
+    "use strict";Object.defineProperty(r, "__esModule", { value: !0 });var n = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (t) {
+      return typeof t;
+    } : function (t) {
+      return t && "function" == typeof Symbol && t.constructor === Symbol ? "symbol" : typeof t;
+    };r["default"] = function (t) {
+      if ("object" !== n(t.ampSpectrum)) throw new TypeError();return Math.sqrt((0, o.mu)(2, t.ampSpectrum) - Math.pow((0, o.mu)(1, t.ampSpectrum), 2));
+    };var o = t("./extractorUtilities");e.exports = r["default"];
+  }, { "./extractorUtilities": 11 }], 25: [function (t, e, r) {
+    "use strict";Object.defineProperty(r, "__esModule", { value: !0 });var n = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (t) {
+      return typeof t;
+    } : function (t) {
+      return t && "function" == typeof Symbol && t.constructor === Symbol ? "symbol" : typeof t;
+    };r["default"] = function () {
+      if ("object" !== n(arguments[0].signal)) throw new TypeError();for (var t = 0, e = 0; e < arguments[0].signal.length; e++) (arguments[0].signal[e] >= 0 && arguments[0].signal[e + 1] < 0 || arguments[0].signal[e] < 0 && arguments[0].signal[e + 1] >= 0) && t++;return t;
+    }, e.exports = r["default"];
+  }, {}], 26: [function (t, e, r) {
+    "use strict";function n(t) {
+      return t && t.__esModule ? t : { "default": t };
+    }Object.defineProperty(r, "__esModule", { value: !0 });var o = t("./extractors/rms"),
+        a = n(o),
+        i = t("./extractors/energy"),
+        u = n(i),
+        s = t("./extractors/spectralSlope"),
+        c = n(s),
+        f = t("./extractors/spectralCentroid"),
+        l = n(f),
+        p = t("./extractors/spectralRolloff"),
+        m = n(p),
+        y = t("./extractors/spectralFlatness"),
+        h = n(y),
+        d = t("./extractors/spectralSpread"),
+        g = n(d),
+        b = t("./extractors/spectralSkewness"),
+        S = n(b),
+        v = t("./extractors/spectralKurtosis"),
+        w = n(v),
+        x = t("./extractors/zcr"),
+        _ = n(x),
+        M = t("./extractors/loudness"),
+        E = n(M),
+        j = t("./extractors/perceptualSpread"),
+        O = n(j),
+        T = t("./extractors/perceptualSharpness"),
+        A = n(T),
+        F = t("./extractors/mfcc"),
+        k = n(F),
+        z = t("./extractors/powerSpectrum"),
+        P = n(z);r["default"] = { buffer: function buffer(t) {
+        return t.signal;
+      }, rms: a["default"], energy: u["default"], complexSpectrum: function complexSpectrum(t) {
+        return t.complexSpectrum;
+      }, spectralSlope: c["default"], spectralCentroid: l["default"], spectralRolloff: m["default"], spectralFlatness: h["default"], spectralSpread: g["default"], spectralSkewness: S["default"], spectralKurtosis: w["default"], amplitudeSpectrum: function amplitudeSpectrum(t) {
+        return t.ampSpectrum;
+      }, zcr: _["default"], loudness: E["default"], perceptualSpread: O["default"], perceptualSharpness: A["default"], powerSpectrum: P["default"], mfcc: k["default"] }, e.exports = r["default"];
+  }, { "./extractors/energy": 10, "./extractors/loudness": 12, "./extractors/mfcc": 13, "./extractors/perceptualSharpness": 14, "./extractors/perceptualSpread": 15, "./extractors/powerSpectrum": 16, "./extractors/rms": 17, "./extractors/spectralCentroid": 18, "./extractors/spectralFlatness": 19, "./extractors/spectralKurtosis": 20, "./extractors/spectralRolloff": 21, "./extractors/spectralSkewness": 22, "./extractors/spectralSlope": 23, "./extractors/spectralSpread": 24, "./extractors/zcr": 25 }], 27: [function (t, e, r) {
+    "use strict";function n(t) {
+      if (t && t.__esModule) return t;var e = {};if (null != t) for (var r in t) Object.prototype.hasOwnProperty.call(t, r) && (e[r] = t[r]);return (e["default"] = t, e);
+    }Object.defineProperty(r, "__esModule", { value: !0 });var o = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (t) {
+      return typeof t;
+    } : function (t) {
+      return t && "function" == typeof Symbol && t.constructor === Symbol ? "symbol" : typeof t;
+    },
+        a = t("./utilities"),
+        i = n(a),
+        u = t("./featureExtractors"),
+        s = n(u),
+        c = t("jsfft"),
+        f = (n(c), t("jsfft/lib/complex_array")),
+        l = n(f),
+        p = t("./meyda-wa"),
+        m = { audioContext: null, spn: null, bufferSize: 512, sampleRate: 44100, melBands: 26, callback: null, windowingFunction: "hanning", featureExtractors: s, EXTRACTION_STARTED: !1, _featuresToExtract: [], _errors: { notPow2: new Error("Meyda: Input data length/buffer size needs to be a power of 2, e.g. 64 or 512"), featureUndef: new Error("Meyda: No features defined."), invalidFeatureFmt: new Error("Meyda: Invalid feature format"), invalidInput: new Error("Meyda: Invalid input."), noAC: new Error("Meyda: No AudioContext specified."), noSource: new Error("Meyda: No source node specified.") }, createMeydaAnalyzer: function createMeydaAnalyzer(t) {
+        return new p.MeydaAnalyzer(t, this);
+      }, extract: function extract(t, e) {
+        if (!e) throw this._errors.invalidInput;if ("object" != ("undefined" == typeof e ? "undefined" : o(e))) throw this._errors.invalidInput;if (!t) throw this._errors.featureUndef;if (!i.isPowerOfTwo(e.length)) throw this._errors.notPow2;("undefined" == typeof this.barkScale || this.barkScale.length != this.bufferSize) && (this.barkScale = i.createBarkScale(this.bufferSize, this.sampleRate, this.bufferSize)), ("undefined" == typeof this.melFilterBank || this.barkScale.length != this.bufferSize || this.melFilterBank.length != this.melBands) && (this.melFilterBank = i.createMelFilterBank(this.melBands, this.sampleRate, this.bufferSize)), "undefined" == typeof e.buffer ? this.signal = i.arrayToTyped(e) : this.signal = e;var r = i.applyWindow(this.signal, this.windowingFunction),
+            n = new l.ComplexArray(this.bufferSize);n.map(function (t, e, n) {
+          t.real = r[e];
+        });var a = n.FFT();this.complexSpectrum = a, this.ampSpectrum = new Float32Array(this.bufferSize / 2);for (var u = 0; u < this.bufferSize / 2; u++) this.ampSpectrum[u] = Math.sqrt(Math.pow(a.real[u], 2) + Math.pow(a.imag[u], 2));if ("object" === ("undefined" == typeof t ? "undefined" : o(t))) {
+          for (var s = {}, c = 0; c < t.length; c++) s[t[c]] = this.featureExtractors[t[c]]({ ampSpectrum: this.ampSpectrum, complexSpectrum: this.complexSpectrum, signal: this.signal, bufferSize: this.bufferSize, sampleRate: this.sampleRate, barkScale: this.barkScale, melFilterBank: this.melFilterBank });return s;
+        }if ("string" == typeof t) return this.featureExtractors[t]({ ampSpectrum: this.ampSpectrum, complexSpectrum: this.complexSpectrum, signal: this.signal, bufferSize: this.bufferSize, sampleRate: this.sampleRate, barkScale: this.barkScale, melFilterBank: this.melFilterBank });throw this._errors.invalidFeatureFmt;
+      } };r["default"] = m, "undefined" != typeof window && (window.Meyda = m), e.exports = r["default"];
+  }, { "./featureExtractors": 26, "./meyda-wa": 28, "./utilities": 29, jsfft: 6, "jsfft/lib/complex_array": 5 }], 28: [function (t, e, r) {
+    "use strict";function n(t) {
+      if (t && t.__esModule) return t;var e = {};if (null != t) for (var r in t) Object.prototype.hasOwnProperty.call(t, r) && (e[r] = t[r]);return (e["default"] = t, e);
+    }function o(t, e) {
+      if (!(t instanceof e)) throw new TypeError("Cannot call a class as a function");
+    }Object.defineProperty(r, "__esModule", { value: !0 }), r.MeydaAnalyzer = void 0;var a = (function () {
+      function t(t, e) {
+        for (var r = 0; r < e.length; r++) {
+          var n = e[r];n.enumerable = n.enumerable || !1, n.configurable = !0, "value" in n && (n.writable = !0), Object.defineProperty(t, n.key, n);
+        }
+      }return function (e, r, n) {
+        return (r && t(e.prototype, r), n && t(e, n), e);
+      };
+    })(),
+        i = t("./utilities"),
+        u = n(i),
+        s = t("./featureExtractors"),
+        c = n(s);r.MeydaAnalyzer = (function () {
+      function t(e, r) {
+        if ((o(this, t), this._m = r, !e.audioContext)) throw this._m._errors.noAC;if (e.bufferSize && !u.isPowerOfTwo(e.bufferSize)) throw this._m._errors.notPow2;if (!e.source) throw this._m._errors.noSource;this._m.audioContext = e.audioContext, this._m.bufferSize = e.bufferSize || r.bufferSize || 256, this._m.sampleRate = e.sampleRate || this._m.audioContext.sampleRate || 44100, this._m.callback = e.callback, this._m.windowingFunction = e.windowingFunction || "hanning", this._m.featureExtractors = c, this._m.EXTRACTION_STARTED = e.startImmediately || !1, this._m.spn = this._m.audioContext.createScriptProcessor(this._m.bufferSize, 1, 1), this._m.spn.connect(this._m.audioContext.destination), this._m._featuresToExtract = e.featureExtractors || [], this._m.barkScale = u.createBarkScale(this._m.bufferSize, this._m.sampleRate, this._m.bufferSize), this._m.melFilterBank = u.createMelFilterBank(this._m.melBands, this._m.sampleRate, this._m.bufferSize), this._m.inputData = null, r = this, this.setSource(e.source), this._m.spn.onaudioprocess = function (t) {
+          r._m.inputData = t.inputBuffer.getChannelData(0);var e = r._m.extract(r._m._featuresToExtract, r._m.inputData);"function" == typeof r._m.callback && r._m.EXTRACTION_STARTED && r._m.callback(e);
+        };
+      }return (a(t, [{ key: "start", value: function value(t) {
+          this._m._featuresToExtract = t, this._m.EXTRACTION_STARTED = !0;
+        } }, { key: "stop", value: function value() {
+          this._m.EXTRACTION_STARTED = !1;
+        } }, { key: "setSource", value: function value(t) {
+          t.connect(this._m.spn);
+        } }, { key: "get", value: function value(t) {
+          return null !== this._m.inputData ? this._m.extract(t || this._m._featuresToExtract, this._m.inputData) : null;
+        } }]), t);
+    })();
+  }, { "./featureExtractors": 26, "./utilities": 29 }], 29: [function (t, e, r) {
+    "use strict";function n(t) {
+      if (t && t.__esModule) return t;var e = {};if (null != t) for (var r in t) Object.prototype.hasOwnProperty.call(t, r) && (e[r] = t[r]);return (e["default"] = t, e);
+    }function o(t) {
+      for (; t % 2 === 0 && t > 1;) t /= 2;return 1 === t;
+    }function a(t) {
+      throw new Error("Meyda: " + t);
+    }function i(t, e) {
+      for (var r = [], n = 0; n < Math.min(t.length, e.length); n++) r[n] = t[n] * e[n];return r;
+    }function u(t, e) {
+      if ("rect" !== e) {
+        if (("" !== e && e || (e = "hanning"), x[e] || (x[e] = {}), !x[e][t.length])) try {
+          x[e][t.length] = w[e](t.length);
+        } catch (r) {
+          throw new Error("Invalid windowing function");
+        }t = i(t, x[e][t.length]);
+      }return t;
+    }function s(t, e, r) {
+      for (var n = new Float32Array(t), o = 0; o < n.length; o++) n[o] = o * e / r, n[o] = 13 * Math.atan(n[o] / 1315.8) + 3.5 * Math.atan(Math.pow(n[o] / 7518, 2));
+      return n;
+    }function c(t) {
+      return Array.prototype.slice.call(t);
+    }function f(t) {
+      return Float32Array.from(t);
+    }function l(t, e) {
+      return t / e;
+    }function p(t, e) {
+      return t.map(function (t) {
+        return t / e;
+      });
+    }function m(t) {
+      var e = 0;return (t.forEach(function (t, r, n) {
+        t > e && (e = t);
+      }), t.map(function (t) {
+        return t / e;
+      }));
+    }function y(t) {
+      return t.reduce(function (t, e) {
+        return t + e;
+      }) / t.length;
+    }function h(t) {
+      var e = 700 * (Math.exp(t / 1125) - 1);return e;
+    }function d(t) {
+      var e = 1125 * Math.log(1 + t / 700);return e;
+    }function g(t) {
+      return h(t);
+    }function b(t) {
+      return d(t);
+    }function S(t, e, r) {
+      for (var n = new Float32Array(t + 2), o = new Float32Array(t + 2), a = 0, i = e / 2, u = d(a), s = d(i), c = s - u, f = c / (t + 1), l = Array(t + 2), p = 0; p < n.length; p++) n[p] = p * f, o[p] = h(n[p]), l[p] = Math.floor((r + 1) * o[p] / e);for (var m = Array(t), y = 0; y < m.length; y++) {
+        m[y] = Array.apply(null, new Array(r / 2 + 1)).map(Number.prototype.valueOf, 0);for (var p = l[y]; p < l[y + 1]; p++) m[y][p] = (p - l[y]) / (l[y + 1] - l[y]);for (var p = l[y + 1]; p < l[y + 2]; p++) m[y][p] = (l[y + 2] - p) / (l[y + 2] - l[y + 1]);
+      }return m;
+    }Object.defineProperty(r, "__esModule", { value: !0 }), r.isPowerOfTwo = o, r.error = a, r.pointwiseBufferMult = i, r.applyWindow = u, r.createBarkScale = s, r.typedToArray = c, r.arrayToTyped = f, r.normalize = l, r.normalize_a = p, r.normalize_a_to_1 = m, r.mean = y, r.melToFreq = g, r.freqToMel = b, r.createMelFilterBank = S;var v = t("./windowing"),
+        w = n(v),
+        x = {};
+  }, { "./windowing": 30 }], 30: [function (t, e, r) {
+    "use strict";function n(t) {
+      for (var e = new Float32Array(t), r = 2 * Math.PI / (t - 1), n = 2 * r, o = 0; t / 2 > o; o++) e[o] = .42 - .5 * Math.cos(o * r) + .08 * Math.cos(o * n);for (var o = t / 2; o > 0; o--) e[t - o] = e[o - 1];return e;
+    }function o(t) {
+      for (var e = Math.PI / (t - 1), r = new Float32Array(t), n = 0; t > n; n++) r[n] = Math.sin(e * n);return r;
+    }function a(t) {
+      for (var e = new Float32Array(t), r = 0; t > r; r++) e[r] = .5 - .5 * Math.cos(2 * Math.PI * r / (t - 1));return e;
+    }function i(t) {
+      for (var e = new Float32Array(t), r = 0; t > r; r++) e[r] = .54 - .46 * Math.cos(2 * Math.PI * (r / t - 1));return e;
+    }Object.defineProperty(r, "__esModule", { value: !0 }), r.blackman = n, r.sine = o, r.hanning = a, r.hamming = i;
+  }, {}] }, {}, [27]);
+
+}).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
+},{}]},{},[2]);

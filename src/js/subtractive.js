@@ -1,4 +1,4 @@
-import './meyda.es6';
+import './meyda.min';
 
 export default class Subtractive{
 	constructor(context,meydaHandler){
